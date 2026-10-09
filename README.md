@@ -11,7 +11,8 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 4. Le texte s'affiche en notification et part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée. Pendant ces 5 s :
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
    - <kbd>Échap</kbd> ou <kbd>Super</kbd>+<kbd>Q</kbd> : annuler.
-5. Le presse-papiers garde toujours la dernière phrase transcrite (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
+5. Les annotations de bruit que Whisper ajoute (`*Bruit de la porte*`, `[Musique]`, `(rires)`) sont retirées du texte.
+6. Le presse-papiers garde toujours la dernière phrase transcrite (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
 
 ⚠️ Le texte est tapé dans la fenêtre retenue, quelle qu'elle soit (y compris un shell).
 ⚠️ Pendant les 5 s d'attente, Entrée et Échap sont captées par Walkie Talkie et n'arrivent pas aux autres applications.
@@ -95,6 +96,12 @@ Temps de transcription d'une phrase de 4,5 s, modèle `small`, langue `fr`, 4 pa
 | GPU NVIDIA T600 Laptop 4 Go (CUDA 12.0) | 1,8 – 2,8 s |
 
 Whisper traite toujours une fenêtre de 30 s : le temps varie peu avec la longueur de la phrase. `WALKIE_LANG=auto` ajoute une détection de langue qui double à peu près le temps.
+
+## Tests
+
+```bash
+cargo test
+```
 
 ## Dépannage
 

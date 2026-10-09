@@ -103,7 +103,43 @@ fn transcribe(ctx: &WhisperContext, cfg: &Config) -> String {
     if state.full(params, &audio).is_err() {
         return String::new();
     }
-    state.as_iter().map(|s| s.to_string().trim().to_string()).collect::<Vec<_>>().join(" ").trim().to_string()
+    let text = state.as_iter().map(|s| s.to_string()).collect::<Vec<_>>().join(" ");
+    strip_annotations(&text)
+}
+
+fn strip_annotations(text: &str) -> String {
+    let mut kept = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(['*', '[', '(']) {
+        let closer = match rest.as_bytes()[start] {
+            b'[' => ']',
+            b'(' => ')',
+            _ => '*',
+        };
+        let Some(length) = rest[start + 1..].find(closer) else { break };
+        kept.push_str(&rest[..start]);
+        kept.push(' ');
+        rest = &rest[start + length + 2..];
+    }
+    kept.push_str(rest);
+    kept.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::strip_annotations;
+
+    #[test]
+    fn retire_les_annotations_de_bruit() {
+        assert_eq!(strip_annotations(" *Bruit de la porte* "), "");
+        assert_eq!(strip_annotations("[Musique] Bonjour (rires) Claude *toux*"), "Bonjour Claude");
+    }
+
+    #[test]
+    fn garde_le_texte_sans_annotation() {
+        assert_eq!(strip_annotations("  Lance les tests  du module. "), "Lance les tests du module.");
+        assert_eq!(strip_annotations("Ouvre la parenthèse ( sans la fermer"), "Ouvre la parenthèse ( sans la fermer");
+    }
 }
 
 fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
