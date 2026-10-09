@@ -1,7 +1,7 @@
 use std::env;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -82,8 +82,8 @@ impl Walkie {
     }
 }
 
-fn transcribe(ctx: &WhisperContext, cfg: &Config) -> String {
-    let samples: Vec<i16> = match hound::WavReader::open(&cfg.wav) {
+fn transcribe(ctx: &WhisperContext, wav: &Path, language: &str) -> String {
+    let samples: Vec<i16> = match hound::WavReader::open(wav) {
         Ok(reader) => reader.into_samples::<i16>().filter_map(Result::ok).collect(),
         Err(_) => return String::new(),
     };
@@ -91,7 +91,7 @@ fn transcribe(ctx: &WhisperContext, cfg: &Config) -> String {
     whisper_rs::convert_integer_to_float_audio(&samples, &mut audio).unwrap();
 
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-    params.set_language(Some(&cfg.language));
+    params.set_language(Some(language));
     params.set_n_threads(thread::available_parallelism().map_or(4, |n| n.get() / 2) as i32);
     params.set_print_progress(false);
     params.set_print_realtime(false);
@@ -227,7 +227,7 @@ fn await_answer(hold: Duration, holding: impl Fn() -> bool) -> Answer {
 }
 
 fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>) {
-    let text = transcribe(ctx, cfg);
+    let text = transcribe(ctx, &cfg.wav, &cfg.language);
     let generation = {
         let mut w = walkie.lock().unwrap();
         if text.is_empty() {
@@ -266,12 +266,14 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
     w.notify("✅ Envoyé", &text, 3000);
 }
 
+fn load_model(cfg: &Config) -> WhisperContext {
+    WhisperContext::new_with_params(cfg.model.to_str().unwrap(), WhisperContextParameters::default())
+        .unwrap_or_else(|e| panic!("modèle {} illisible : {e}", cfg.model.display()))
+}
+
 fn serve() {
     let cfg = Arc::new(config());
-    let ctx = Arc::new(
-        WhisperContext::new_with_params(cfg.model.to_str().unwrap(), WhisperContextParameters::default())
-            .unwrap_or_else(|e| panic!("modèle {} illisible : {e}", cfg.model.display())),
-    );
+    let ctx = Arc::new(load_model(&cfg));
     let walkie = Arc::new(Mutex::new(Walkie { state: State::Idle, generation: 0, notification_id: None }));
 
     let path = socket_path();
@@ -291,12 +293,17 @@ fn serve() {
 fn main() {
     match env::args().nth(1).as_deref() {
         Some("serve") => serve(),
+        Some("transcribe") => {
+            let wav = env::args().nth(2).expect("usage : walkie-talkie transcribe <fichier.wav>");
+            let cfg = config();
+            println!("{}", transcribe(&load_model(&cfg), Path::new(&wav), &cfg.language));
+        }
         Some("toggle") | None => {
             let mut stream = UnixStream::connect(socket_path()).expect("le service walkie-talkie ne tourne pas");
             stream.write_all(b"toggle").unwrap();
         }
         Some(other) => {
-            eprintln!("usage : walkie-talkie [serve|toggle] (reçu : {other})");
+            eprintln!("usage : walkie-talkie [serve|toggle|transcribe <fichier.wav>] (reçu : {other})");
             std::process::exit(2);
         }
     }

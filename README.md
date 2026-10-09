@@ -19,41 +19,55 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 
 ## Installation
 
-Testé sur Ubuntu 24.04 / GNOME / X11 (pas Wayland : `xdotool` et la capture des touches en dépendent).
+Testé sur Ubuntu 22.04 / 24.04, GNOME, X11 (pas Wayland : `xdotool` et la capture des touches en dépendent).
 
-### 1. Dépendances
+### Option A — binaire précompilé (recommandé)
+
+Binaire x86_64, transcription sur CPU (processeur avec AVX2 : Intel depuis 2013, AMD depuis 2015), glibc ≥ 2.35.
+
+```bash
+sudo apt install xdotool xclip
+```
+
+```bash
+curl -fsSL https://github.com/NoxFr/walkie-talkie-linux/releases/latest/download/walkie-talkie-linux-x86_64.tar.gz | tar xz
+```
+
+```bash
+./walkie-talkie-linux-x86_64/install.sh
+```
+
+Le binaire est installé dans `~/.local/bin/walkie-talkie`. Pour mettre à jour : refaire les deux dernières commandes.
+
+### Option B — depuis les sources (pour le GPU NVIDIA)
 
 ```bash
 sudo apt install xdotool xclip cmake clang
 ```
 
-Rust doit être installé ([rustup](https://rustup.rs)). `pw-record` (PipeWire) et `notify-send` sont présents par défaut sur Ubuntu.
-
-### 2. GPU NVIDIA (optionnel)
-
-Gain modeste avec le modèle `small` sur un petit GPU (voir [Performances](#performances)) ; plus utile pour un modèle plus gros (`medium`) ou pour laisser le CPU libre.
+Rust doit être installé ([rustup](https://rustup.rs)). Pour le GPU NVIDIA (optionnel) :
 
 ```bash
 sudo apt install nvidia-cuda-toolkit g++-12
 ```
 
-Le CUDA 12.0 d'Ubuntu refuse le gcc 13 du système : `install.sh` utilise automatiquement `g++-12` comme compilateur hôte. La compilation CUDA prend ~5 min la première fois.
-
-### 3. Installer
+Gain modeste avec le modèle `small` sur un petit GPU (voir [Performances](#performances)) ; plus utile pour `medium` ou pour laisser le CPU libre. Le CUDA 12.0 d'Ubuntu refuse le gcc 13 du système : `install.sh` utilise automatiquement `g++-12` comme compilateur hôte. La compilation CUDA prend ~5 min la première fois.
 
 ```bash
-./install.sh
+git clone https://github.com/NoxFr/walkie-talkie-linux && cd walkie-talkie-linux && ./install.sh
 ```
 
-Le script :
-- compile et installe le binaire (`~/.cargo/bin/walkie-talkie`), avec CUDA si `nvcc` est présent ;
+Le binaire est compilé et installé dans `~/.cargo/bin/walkie-talkie`, avec CUDA si `nvcc` est présent. Relancer `./install.sh` après une mise à jour du code.
+
+### Ce que fait `install.sh` (les deux options)
+
 - télécharge le modèle `ggml-small.bin` (~466 Mo) dans `~/.local/share/walkie-talkie/` ;
 - crée et démarre le service utilisateur systemd `walkie-talkie` (lancé avec la session graphique) ;
 - ajoute le raccourci GNOME <kbd>Super</kbd>+<kbd>Q</kbd> (<kbd>Super</kbd> = touche Windows) et le retire du Dock Ubuntu, qui l'utilise pour afficher ses numéros d'applications (<kbd>Super</kbd>+<kbd>1</kbd>…<kbd>9</kbd> restent actifs). Pour rendre la touche au Dock : `gsettings set org.gnome.shell.extensions.dash-to-dock shortcut "['<Super>q']"`.
 
-Relancer `./install.sh` après une mise à jour du code.
+`pw-record` (PipeWire), `notify-send` et `curl` sont présents par défaut sur Ubuntu.
 
-### 4. Micro
+### Micro
 
 Un micro trop bas donne une transcription fantaisiste. Vérifier le volume d'entrée (Paramètres → Son → Entrée) ou :
 
@@ -97,11 +111,27 @@ Temps de transcription d'une phrase de 4,5 s, langue `fr`, 4 passes :
 
 Whisper traite toujours une fenêtre de 30 s : le temps varie peu avec la longueur de la phrase. `WALKIE_LANG=auto` ajoute une détection de langue qui double à peu près le temps.
 
-## Tests
+## Tests et CI
 
 ```bash
 cargo test
 ```
+
+Tester la transcription d'un fichier WAV (16 kHz mono 16 bits), utile pour vérifier le micro ou un modèle :
+
+```bash
+walkie-talkie transcribe fichier.wav
+```
+
+La CI GitHub Actions (`.github/workflows/ci.yml`) lance les tests, compile un binaire portable et vérifie une transcription réelle (phrase synthétisée par `espeak-ng`, modèle `base`).
+
+## Publier une release
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+Le workflow `release.yml` rejoue la CI puis publie `walkie-talkie-linux-x86_64.tar.gz` (binaire + `install.sh` + README) et sa somme SHA-256 sur la page Releases.
 
 ## Dépannage
 

@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: walkie-talkie
+          path: bin
+
+      - name: Archive
+        run: |
+          name=walkie-talkie-linux-x86_64
+          mkdir "$name"
+          install -m755 bin/walkie-talkie "$name/walkie-talkie"
+          cp install.sh README.md "$name/"
+          tar czf "$name.tar.gz" "$name"
+          sha256sum "$name.tar.gz" > "$name.tar.gz.sha256"
+
+      - name: Publication
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" walkie-talkie-linux-x86_64.tar.gz walkie-talkie-linux-x86_64.tar.gz.sha256 --title "$GITHUB_REF_NAME" --generate-notes

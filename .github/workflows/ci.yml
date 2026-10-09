@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_call:
+
+env:
+  GGML_NATIVE: "OFF"
+  GGML_AVX: "ON"
+  GGML_AVX2: "ON"
+  GGML_FMA: "ON"
+  GGML_F16C: "ON"
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tests unitaires
+        run: cargo test --release --locked
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Dépendances dynamiques
+        run: |
+          ldd target/release/walkie-talkie
+          objdump -T target/release/walkie-talkie | grep -o 'GLIBC_[0-9.]*' | sort -uV | tail -1
+
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: ggml-base
+
+      - name: Transcription de bout en bout
+        run: |
+          sudo apt-get update -q && sudo apt-get install -yq espeak-ng sox
+          mkdir -p models
+          [ -f models/ggml-base.bin ] || curl -fsSL -o models/ggml-base.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin
+          espeak-ng -v fr -s 140 -w speech.wav "Bonjour, ceci est un test de dictée vocale."
+          sox speech.wav -r 16000 -c 1 -b 16 sample.wav
+          text=$(WALKIE_MODEL=models/ggml-base.bin target/release/walkie-talkie transcribe sample.wav 2>/dev/null)
+          echo "Transcription : $text"
+          echo "$text" | grep -qi bonjour
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: walkie-talkie
+          path: target/release/walkie-talkie

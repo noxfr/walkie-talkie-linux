@@ -6,18 +6,27 @@ SHORTCUT="${WALKIE_SHORTCUT:-<Super>q}"
 MODEL="${WALKIE_MODEL_NAME:-small}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/walkie-talkie"
 
-for cmd in cargo cmake pw-record xdotool xclip notify-send; do
-  command -v "$cmd" >/dev/null || { echo "manquant : $cmd (sudo apt install xdotool xclip cmake clang)"; exit 1; }
-done
+require() {
+  for cmd in "$@"; do
+    command -v "$cmd" >/dev/null || { echo "manquant : $cmd — voir la section Installation du README"; exit 1; }
+  done
+}
+require curl pw-record xdotool xclip notify-send gsettings systemctl
 
-features=()
-if command -v nvcc >/dev/null; then
-  features=(--features cuda)
-  export CMAKE_CUDA_ARCHITECTURES="${CMAKE_CUDA_ARCHITECTURES:-native}"
-  command -v g++-12 >/dev/null && export CMAKE_CUDA_HOST_COMPILER="${CMAKE_CUDA_HOST_COMPILER:-$(command -v g++-12)}"
+if [ -x ./walkie-talkie ]; then
+  BIN="$HOME/.local/bin/walkie-talkie"
+  install -Dm755 ./walkie-talkie "$BIN"
+else
+  require cargo cmake
+  features=()
+  if command -v nvcc >/dev/null; then
+    features=(--features cuda)
+    export CMAKE_CUDA_ARCHITECTURES="${CMAKE_CUDA_ARCHITECTURES:-native}"
+    command -v g++-12 >/dev/null && export CMAKE_CUDA_HOST_COMPILER="${CMAKE_CUDA_HOST_COMPILER:-$(command -v g++-12)}"
+  fi
+  cargo install --path . --locked "${features[@]}"
+  BIN="$HOME/.cargo/bin/walkie-talkie"
 fi
-cargo install --path . --locked "${features[@]}"
-BIN="$HOME/.cargo/bin/walkie-talkie"
 
 mkdir -p "$DATA_DIR"
 if [ ! -f "$DATA_DIR/ggml-$MODEL.bin" ]; then
