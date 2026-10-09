@@ -1,11 +1,11 @@
 # 📻 Walkie Talkie Linux
 
-Dictée vocale vers Claude Code (ou n'importe quelle fenêtre) sous Linux X11.
+Dictée vocale sous Linux X11 : ce que tu dis est tapé dans la fenêtre qui a le focus — terminal (Claude Code…), éditeur, navigateur, messagerie.
 Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-talkie), l'overlay macOS de Victor Rentea — réécrit de zéro en Rust, sans reprise de code.
 
 ## Utilisation
 
-1. Mettre le focus sur la fenêtre cible (le terminal où tourne Claude Code).
+1. Mettre le focus sur la fenêtre où écrire (n'importe laquelle).
 2. <kbd>Super</kbd>+<kbd>Q</kbd> : le micro s'ouvre (notification « 🎙️ Écoute… »). Parler.
 3. <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
 4. Le texte s'affiche en notification et part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée. Pendant ces 5 s :
@@ -14,7 +14,7 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 5. Les annotations de bruit que Whisper ajoute (`*Bruit de la porte*`, `[Musique]`, `(rires)`) sont retirées du texte.
 6. Le presse-papiers garde toujours la dernière phrase transcrite (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
 
-⚠️ Le texte est tapé dans la fenêtre retenue, quelle qu'elle soit (y compris un shell).
+⚠️ Le texte est tapé dans la fenêtre retenue, quelle qu'elle soit (y compris un shell), puis Entrée est pressée : dans une messagerie ou un formulaire, ça envoie.
 ⚠️ Pendant les 5 s d'attente, Entrée et Échap sont captées par Walkie Talkie et n'arrivent pas aux autres applications.
 
 ## Installation

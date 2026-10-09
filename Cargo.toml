@@ -1,7 +1,7 @@
 [package]
 name = "walkie-talkie"
 version = "0.1.0"
-description = "Dictée vocale vers Claude Code sous Linux, inspirée de victorrentea/walkie-talkie"
+description = "Dictée vocale vers la fenêtre active sous Linux, inspirée de victorrentea/walkie-talkie"
 edition = "2024"
 
 [dependencies]
