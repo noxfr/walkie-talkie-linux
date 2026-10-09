@@ -238,7 +238,7 @@ fn strip_annotations(text: &str) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{Attachments, compose, is_terminal, silence_reached, strip_annotations};
+    use super::{Attachments, compose, is_terminal, silence_reached, speech_threshold, strip_annotations};
 
     #[test]
     fn retire_les_annotations_de_bruit() {
@@ -259,6 +259,17 @@ mod tests {
         assert!(!silence_reached(&levels, 20, 0));
         levels.push(801);
         assert!(silence_reached(&levels, 20, 0));
+    }
+
+    #[test]
+    fn une_voix_faible_garde_une_marge_avant_la_coupure() {
+        let speech = [0, 7, 28, 25, 677, 838, 1011, 917, 620, 798, 597, 379, 422, 338, 986, 380, 594, 1127, 1118, 818, 482, 431, 779, 910, 1397, 1512, 1054, 371, 489, 783, 1835, 1422, 1272, 1151, 92, 617, 1266, 969, 1074, 683, 431, 400, 1222, 1036, 266, 1064, 975, 609, 42, 45, 61, 74, 57, 88, 885, 1504, 825, 1153, 1062, 629, 1583, 349, 219, 340, 639, 935, 963, 1172, 502, 42, 25, 137, 993, 1258, 1146, 362, 896, 945, 615, 77, 674, 585, 59, 37, 41, 61, 67, 54, 41, 31, 283, 1388, 1467, 978, 332, 666, 745, 222, 570, 887, 500, 151, 195, 1282, 2013, 1629, 1284, 953, 86, 23, 23, 298, 1245, 1649, 1852, 1778, 1770, 1848, 1955, 1351, 354, 118, 421, 1261, 1339, 897, 395, 42, 29, 27, 33, 29, 35, 210, 1536, 898, 470, 980, 590, 132, 403, 142, 27, 29];
+        let threshold = speech_threshold(&speech);
+        let longest_pause = speech.split(|&level| level > threshold).map(<[u32]>::len).max().unwrap();
+        assert!(longest_pause < 10, "pause de {:.1} s en pleine phrase", longest_pause as f32 / 10.0);
+        let mut finished = speech.to_vec();
+        finished.extend([25; 20]);
+        assert!(silence_reached(&finished, 20, 0));
     }
 
     #[test]
@@ -378,7 +389,7 @@ fn frame_rms(frame: &[u8]) -> u32 {
     (sum / (frame.len() / 2) as f64).sqrt() as u32
 }
 
-const MIN_SPEECH_LEVEL: u32 = 1000;
+const MIN_SPEECH_LEVEL: u32 = 300;
 const WAVE_BARS: usize = 14;
 
 fn speech_threshold(levels: &[u32]) -> u32 {

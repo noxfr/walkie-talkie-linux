@@ -178,7 +178,7 @@ journalctl --user -u walkie-talkie -f
 - **Rien ne se passe au raccourci** : vérifier que le service tourne (`systemctl --user status walkie-talkie`) et qu'aucune autre application ne capte <kbd>Super</kbd>+<kbd>Q</kbd> (`gsettings list-recursively | grep "<Super>q"`).
 - **« no GPU found » dans les logs** : le binaire est compilé sans CUDA ; installer `nvidia-cuda-toolkit` puis relancer `./install.sh`.
 - **Transcription incompréhensible** : volume du micro, bruit de fond, ou langue (`WALKIE_LANG`).
-- **Le micro se coupe trop tôt ou jamais** : le seuil s'adapte au bruit de fond (5 × le bruit ambiant, au moins 1000) ; augmenter `WALKIE_SILENCE` si tu fais de longues pauses, ou `0` pour couper uniquement au raccourci.
+- **Le micro se coupe trop tôt ou jamais** : le seuil s'adapte au bruit de fond (5 × le bruit ambiant, au moins 300) ; augmenter `WALKIE_SILENCE` si tu fais de longues pauses, ou `0` pour couper uniquement au raccourci.
 - **Pas d'indicateur près du curseur** : il faut un compositeur (GNOME X11 en a un).
 - **« ❌ Micro indisponible »** : `pw-record` n'a pas pu démarrer — PipeWire ne tourne pas encore (juste après la connexion) ou n'est pas installé.
 - **« ❌ Transcription impossible »** : Whisper n'a pas pu s'exécuter, le plus souvent faute de mémoire GPU (modèle `medium` + d'autres applications sur une petite carte) ; repasser sur `small` (`./install.sh`) ou fermer ce qui occupe le GPU.
