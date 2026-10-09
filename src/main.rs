@@ -5,8 +5,12 @@ use std::path::PathBuf;
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
+use x11rb::connection::Connection;
+use x11rb::protocol::Event;
+use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
+use x11rb::rust_connection::RustConnection;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 enum State {
@@ -71,6 +75,11 @@ impl Walkie {
         let id = output("notify-send", &args);
         self.notification_id = id.or(self.notification_id.take());
     }
+
+    fn cancel(&mut self) {
+        self.state = State::Idle;
+        self.notify("❌ Annulé", "Le texte reste dans le presse-papiers", 3000);
+    }
 }
 
 fn transcribe(ctx: &WhisperContext, cfg: &Config) -> String {
@@ -118,11 +127,67 @@ fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Conf
             thread::spawn(move || hold(&walkie, &ctx, &cfg, window));
         }
         State::Transcribing => {}
-        State::Holding { .. } => {
-            w.state = State::Idle;
-            w.notify("❌ Annulé", "Le texte reste dans le presse-papiers", 3000);
+        State::Holding { .. } => w.cancel(),
+    }
+}
+
+enum Answer {
+    Send,
+    Cancel,
+    Timeout,
+}
+
+const XK_RETURN: u32 = 0xff0d;
+const XK_KP_ENTER: u32 = 0xff8d;
+const XK_ESCAPE: u32 = 0xff1b;
+
+fn keycodes(conn: &impl Connection, keysyms: &[u32]) -> Option<Vec<(u8, u32)>> {
+    let setup = conn.setup();
+    let (min, max) = (setup.min_keycode, setup.max_keycode);
+    let mapping = conn.get_keyboard_mapping(min, max - min + 1).ok()?.reply().ok()?;
+    let per = mapping.keysyms_per_keycode as usize;
+    Some(
+        keysyms
+            .iter()
+            .filter_map(|&sym| {
+                let index = mapping.keysyms.chunks(per).position(|syms| syms.contains(&sym))?;
+                Some((min + index as u8, sym))
+            })
+            .collect(),
+    )
+}
+
+fn grab_answer_keys() -> Option<(RustConnection, Vec<(u8, u32)>)> {
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = conn.setup().roots[screen].root;
+    let keys = keycodes(&conn, &[XK_RETURN, XK_KP_ENTER, XK_ESCAPE])?;
+    for &(code, _) in &keys {
+        for modifiers in [ModMask::from(0u16), ModMask::LOCK, ModMask::M2, ModMask::LOCK | ModMask::M2] {
+            conn.grab_key(true, root, modifiers, code, GrabMode::ASYNC, GrabMode::ASYNC).ok()?;
         }
     }
+    conn.flush().ok()?;
+    Some((conn, keys))
+}
+
+fn await_answer(hold: Duration, holding: impl Fn() -> bool) -> Answer {
+    let deadline = Instant::now() + hold;
+    let grab = grab_answer_keys();
+    let mut pressed = None;
+    while Instant::now() < deadline && holding() {
+        if let Some((conn, keys)) = &grab {
+            while let Ok(Some(event)) = conn.poll_for_event() {
+                match event {
+                    Event::KeyPress(key) => pressed = keys.iter().find(|(code, _)| *code == key.detail).map(|&(_, sym)| sym),
+                    Event::KeyRelease(_) if pressed == Some(XK_ESCAPE) => return Answer::Cancel,
+                    Event::KeyRelease(_) if pressed.is_some() => return Answer::Send,
+                    _ => {}
+                }
+            }
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    Answer::Timeout
 }
 
 fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>) {
@@ -139,15 +204,20 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
         }
         w.generation += 1;
         w.state = State::Holding { generation: w.generation };
-        let title = format!("📻 Envoi dans {} s — raccourci pour annuler", cfg.hold.as_secs_f32());
+        let title = format!("📻 Envoi dans {} s — Entrée : envoyer · Échap : annuler", cfg.hold.as_secs_f32());
         w.notify(&title, &text, 0);
         w.generation
     };
 
-    thread::sleep(cfg.hold);
+    let holding = || matches!(walkie.lock().unwrap().state, State::Holding { generation: g } if g == generation);
+    let answer = await_answer(cfg.hold, holding);
 
     let mut w = walkie.lock().unwrap();
     if !matches!(w.state, State::Holding { generation: g } if g == generation) {
+        return;
+    }
+    if matches!(answer, Answer::Cancel) {
+        w.cancel();
         return;
     }
     w.state = State::Idle;

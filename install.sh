@@ -11,7 +11,11 @@ for cmd in cargo cmake pw-record xdotool xclip notify-send; do
 done
 
 features=()
-command -v nvcc >/dev/null && features=(--features cuda)
+if command -v nvcc >/dev/null; then
+  features=(--features cuda)
+  export CMAKE_CUDA_ARCHITECTURES="${CMAKE_CUDA_ARCHITECTURES:-native}"
+  command -v g++-12 >/dev/null && export CMAKE_CUDA_HOST_COMPILER="${CMAKE_CUDA_HOST_COMPILER:-$(command -v g++-12)}"
+fi
 cargo install --path . --locked "${features[@]}"
 BIN="$HOME/.cargo/bin/walkie-talkie"
 
