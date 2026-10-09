@@ -7,8 +7,9 @@ edition = "2024"
 [dependencies]
 hound = "3.5.1"
 png = "0.18.1"
+tiny-skia = "0.12.0"
 whisper-rs = "0.16.0"
-x11rb = { version = "0.14.0", features = ["randr"] }
+x11rb = { version = "0.14.0", features = ["randr", "shape", "xfixes"] }
 
 [features]
 cuda = ["whisper-rs/cuda"]

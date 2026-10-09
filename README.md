@@ -11,15 +11,21 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
    - **capture d'écran** : <kbd>Super</kbd>+<kbd>W</kbd> fige l'écran, puis **glisser** pour capturer une zone, **cliquer** sur une fenêtre pour la capturer entière, ou <kbd>Échap</kbd> pour renoncer. Autant de fois que voulu ; PNG dans `~/.cache/walkie-talkie/shots/`. Sans `slop` installé, la capture prend tout l'écran sous la souris.
 
    La notification compte les pièces jointes (📸 captures · ✂️ sélections).
-3. <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
+3. **Se taire 2 s** (ou <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau) : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
 4. Le texte s'affiche en notification et part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée. Pendant ces 5 s :
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
    - <kbd>Échap</kbd> ou <kbd>Super</kbd>+<kbd>Q</kbd> : annuler.
-5. Le prompt est tapé sur une seule ligne (un retour à la ligne l'enverrait trop tôt), pièces jointes à la suite :
+5. Un indicateur suit le curseur pendant tout le cycle :
+   - 🔴 rond rouge qui pulse avec la voix pendant l'écoute (un point blanc par pièce jointe) ;
+   - 🟠 arc orange qui tourne pendant la transcription ;
+   - 🟢 anneau vert qui se vide pendant les 5 s d'attente.
+
+   Il laisse passer les clics et disparaît pendant les captures d'écran.
+6. Le prompt est tapé sur une seule ligne (un retour à la ligne l'enverrait trop tôt), pièces jointes à la suite :
    `Corrige ça [texte sélectionné : « let x = 42; »] [capture d'écran : /home/moi/.cache/walkie-talkie/shots/shot-1791546302537.png]`.
    Claude Code ouvre l'image à partir de son chemin.
-6. Les annotations de bruit que Whisper ajoute (`*Bruit de la porte*`, `[Musique]`, `(rires)`) sont retirées du texte.
-7. Le presse-papiers garde toujours le dernier prompt (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
+7. Les annotations de bruit que Whisper ajoute (`*Bruit de la porte*`, `[Musique]`, `(rires)`) sont retirées du texte.
+8. Le presse-papiers garde toujours le dernier prompt (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
 
 ⚠️ Le texte est tapé dans la fenêtre retenue, quelle qu'elle soit (y compris un shell), puis Entrée est pressée : dans une messagerie ou un formulaire, ça envoie.
 ⚠️ Pendant les 5 s d'attente, Entrée et Échap sont captées par Walkie Talkie et n'arrivent pas aux autres applications.
@@ -97,6 +103,7 @@ Variables d'environnement du service (à ajouter dans `~/.config/systemd/user/wa
 |---|---|---|
 | `WALKIE_LANG` | `fr` | langue (`en`, `auto`… ; `auto` double le temps de transcription) |
 | `WALKIE_HOLD` | `5` | secondes avant envoi |
+| `WALKIE_SILENCE` | `2` | secondes de silence après la parole qui ferment le micro (`0` : arrêt manuel uniquement) |
 | `WALKIE_MODEL` | `~/.local/share/walkie-talkie/ggml-small.bin` | modèle whisper.cpp |
 
 Variables de `install.sh` :
@@ -151,3 +158,5 @@ journalctl --user -u walkie-talkie -f
 - **Rien ne se passe au raccourci** : vérifier que le service tourne (`systemctl --user status walkie-talkie`) et qu'aucune autre application ne capte <kbd>Super</kbd>+<kbd>Q</kbd> (`gsettings list-recursively | grep "<Super>q"`).
 - **« no GPU found » dans les logs** : le binaire est compilé sans CUDA ; installer `nvidia-cuda-toolkit` puis relancer `./install.sh`.
 - **Transcription incompréhensible** : volume du micro, bruit de fond, ou langue (`WALKIE_LANG`).
+- **Le micro se coupe trop tôt ou jamais** : le seuil s'adapte au bruit de fond (5 × le bruit ambiant, au moins 1000) ; augmenter `WALKIE_SILENCE` si tu fais de longues pauses, ou `0` pour couper uniquement au raccourci.
+- **Pas d'indicateur près du curseur** : il faut un compositeur (GNOME X11 en a un).

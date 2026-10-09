@@ -1,7 +1,9 @@
 mod capture;
+mod overlay;
 
 use std::env;
-use std::io::{Read, Write};
+use std::fs::File;
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
@@ -14,13 +16,14 @@ use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
 use x11rb::rust_connection::RustConnection;
 use capture::Shot;
+use overlay::Look;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 enum State {
     Idle,
     Recording { recorder: Child, generation: u64 },
     Transcribing,
-    Holding { generation: u64 },
+    Holding { generation: u64, since: Instant },
 }
 
 struct Walkie {
@@ -28,6 +31,8 @@ struct Walkie {
     generation: u64,
     notification_id: Option<String>,
     attachments: Attachments,
+    level: f32,
+    capturing: bool,
 }
 
 #[derive(Default)]
@@ -45,6 +50,9 @@ impl Attachments {
     }
 
     fn summary(&self) -> String {
+        if self.shots.is_empty() && self.selections.is_empty() {
+            return String::new();
+        }
         format!("📸 {} · ✂️ {}", self.shots.len(), self.selections.len())
     }
 }
@@ -64,6 +72,7 @@ struct Config {
     model: PathBuf,
     language: String,
     hold: Duration,
+    silence: Duration,
     wav: PathBuf,
     shots_dir: PathBuf,
 }
@@ -85,6 +94,7 @@ fn config() -> Config {
         model: env::var("WALKIE_MODEL").map(PathBuf::from).unwrap_or(data_dir.join("ggml-small.bin")),
         language: env::var("WALKIE_LANG").unwrap_or("fr".into()),
         hold: Duration::from_secs_f32(env::var("WALKIE_HOLD").ok().and_then(|s| s.parse().ok()).unwrap_or(5.0)),
+        silence: Duration::from_secs_f32(env::var("WALKIE_SILENCE").ok().and_then(|s| s.parse().ok()).unwrap_or(2.0)),
         wav: runtime_dir().join("walkie.wav"),
         shots_dir: env::var("XDG_CACHE_HOME")
             .map(PathBuf::from)
@@ -173,7 +183,7 @@ fn strip_annotations(text: &str) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{Attachments, compose, strip_annotations};
+    use super::{Attachments, compose, silence_reached, strip_annotations};
 
     #[test]
     fn retire_les_annotations_de_bruit() {
@@ -185,6 +195,39 @@ mod tests {
     fn garde_le_texte_sans_annotation() {
         assert_eq!(strip_annotations("  Lance les tests  du module. "), "Lance les tests du module.");
         assert_eq!(strip_annotations("Ouvre la parenthèse ( sans la fermer"), "Ouvre la parenthèse ( sans la fermer");
+    }
+
+    #[test]
+    fn s_arrete_apres_deux_secondes_de_silence_qui_suivent_la_parole() {
+        let mut levels = vec![272, 758, 288, 205, 5214, 3540, 7334, 8097, 5405, 508];
+        levels.extend([200; 18]);
+        assert!(!silence_reached(&levels, 20));
+        levels.push(801);
+        assert!(silence_reached(&levels, 20));
+    }
+
+    #[test]
+    fn ne_s_arrete_pas_sans_avoir_entendu_parler() {
+        assert!(!silence_reached(&[250; 60], 20));
+        assert!(!silence_reached(&[250, 6000, 250, 250], 20));
+    }
+
+    #[test]
+    fn une_capture_en_cours_compte_comme_de_l_activite() {
+        let mut levels = vec![6000; 5];
+        levels.extend([200; 15]);
+        levels.extend([u32::MAX; 40]);
+        levels.extend([200; 10]);
+        assert!(!silence_reached(&levels, 20));
+        levels.extend([200; 10]);
+        assert!(silence_reached(&levels, 20));
+    }
+
+    #[test]
+    fn un_silence_a_zero_desactive_l_arret_automatique() {
+        let mut levels = vec![6000; 5];
+        levels.extend([200; 50]);
+        assert!(!silence_reached(&levels, 0));
     }
 
     #[test]
@@ -213,30 +256,88 @@ mod tests {
 fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
     let mut w = walkie.lock().unwrap();
     match std::mem::replace(&mut w.state, State::Transcribing) {
-        State::Idle => {
-            let recorder = Command::new("pw-record")
-                .args(["--rate", "16000", "--channels", "1", "--format", "s16"])
-                .arg(&cfg.wav)
-                .spawn()
-                .expect("pw-record introuvable");
-            w.generation += 1;
-            w.state = State::Recording { recorder, generation: w.generation };
-            w.attachments = Attachments::default();
-            w.notify_recording();
-            let (walkie, generation) = (walkie.clone(), w.generation);
-            thread::spawn(move || watch_selection(&walkie, generation));
-        }
-        State::Recording { mut recorder, .. } => {
-            let window = output("xdotool", &["getactivewindow"]);
-            run("kill", &["-INT", &recorder.id().to_string()]);
-            let _ = recorder.wait();
-            w.notify("⏳ Transcription…", "", 0);
-            let attachments = std::mem::take(&mut w.attachments);
-            let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
-            thread::spawn(move || hold(&walkie, &ctx, &cfg, window, attachments));
-        }
+        State::Idle => start_recording(&mut w, walkie, ctx, cfg),
+        State::Recording { recorder, .. } => stop_recording(&mut w, recorder, walkie, ctx, cfg),
         State::Transcribing => {}
         State::Holding { .. } => w.cancel(),
+    }
+}
+
+fn start_recording(w: &mut Walkie, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
+    let _ = std::fs::remove_file(&cfg.wav);
+    let recorder = Command::new("pw-record")
+        .args(["--rate", "16000", "--channels", "1", "--format", "s16"])
+        .arg(&cfg.wav)
+        .spawn()
+        .expect("pw-record introuvable");
+    w.generation += 1;
+    w.state = State::Recording { recorder, generation: w.generation };
+    w.attachments = Attachments::default();
+    w.notify_recording();
+    let generation = w.generation;
+    let watched = walkie.clone();
+    thread::spawn(move || watch_selection(&watched, generation));
+    let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
+    thread::spawn(move || watch_level(&walkie, &ctx, &cfg, generation));
+}
+
+fn stop_recording(w: &mut Walkie, mut recorder: Child, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
+    let window = output("xdotool", &["getactivewindow"]);
+    run("kill", &["-INT", &recorder.id().to_string()]);
+    let _ = recorder.wait();
+    w.notify("⏳ Transcription…", "", 0);
+    let attachments = std::mem::take(&mut w.attachments);
+    let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
+    thread::spawn(move || hold(&walkie, &ctx, &cfg, window, attachments));
+}
+
+const WAV_HEADER: u64 = 44;
+const FRAME_BYTES: usize = 3200;
+
+fn frame_rms(frame: &[u8]) -> u32 {
+    let sum: f64 = frame.chunks_exact(2).map(|b| f64::from(i16::from_le_bytes([b[0], b[1]])).powi(2)).sum();
+    (sum / (frame.len() / 2) as f64).sqrt() as u32
+}
+
+fn silence_reached(levels: &[u32], quiet_frames: usize) -> bool {
+    if quiet_frames == 0 || levels.len() <= quiet_frames {
+        return false;
+    }
+    let mut sorted = levels.to_vec();
+    sorted.sort_unstable();
+    let threshold = sorted[sorted.len() / 10].saturating_mul(5).max(1000);
+    let quiet = levels.iter().rev().take_while(|&&level| level <= threshold).count();
+    quiet >= quiet_frames && levels.iter().any(|&level| level > threshold)
+}
+
+fn watch_level(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>, generation: u64) {
+    let quiet_frames = (cfg.silence.as_secs_f32() * 10.0).round() as usize;
+    let (mut offset, mut pending, mut levels) = (WAV_HEADER, Vec::new(), Vec::new());
+    loop {
+        thread::sleep(Duration::from_millis(100));
+        if let Ok(mut file) = File::open(&cfg.wav)
+            && file.seek(SeekFrom::Start(offset)).is_ok()
+        {
+            offset += file.read_to_end(&mut pending).unwrap_or(0) as u64;
+        }
+        let complete = pending.len() / FRAME_BYTES * FRAME_BYTES;
+        let frames: Vec<u32> = pending.drain(..complete).collect::<Vec<_>>().chunks_exact(FRAME_BYTES).map(frame_rms).collect();
+
+        let mut w = walkie.lock().unwrap();
+        if !matches!(w.state, State::Recording { generation: g, .. } if g == generation) {
+            return;
+        }
+        if let Some(&rms) = frames.last() {
+            w.level = (rms as f32 / 6000.0).min(1.0);
+        }
+        let capturing = w.capturing;
+        levels.extend(frames.iter().map(|&rms| if capturing { u32::MAX } else { rms }));
+        if silence_reached(&levels, quiet_frames)
+            && let State::Recording { recorder, .. } = std::mem::replace(&mut w.state, State::Transcribing)
+        {
+            stop_recording(&mut w, recorder, walkie, ctx, cfg);
+            return;
+        }
     }
 }
 
@@ -299,6 +400,21 @@ fn await_answer(hold: Duration, holding: impl Fn() -> bool) -> Answer {
     Answer::Timeout
 }
 
+fn look(w: &Walkie, hold: Duration) -> Look {
+    if w.capturing {
+        return Look::Hidden;
+    }
+    match w.state {
+        State::Idle => Look::Hidden,
+        State::Recording { .. } => Look::Listening {
+            level: w.level,
+            attachments: w.attachments.shots.len() + w.attachments.selections.len(),
+        },
+        State::Transcribing => Look::Transcribing,
+        State::Holding { since, .. } => Look::Holding { remaining: 1.0 - since.elapsed().as_secs_f32() / hold.as_secs_f32() },
+    }
+}
+
 fn primary_selection() -> String {
     output("xclip", &["-o", "-selection", "primary"]).unwrap_or_default()
 }
@@ -333,9 +449,12 @@ fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
     };
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
     let path = cfg.shots_dir.join(format!("shot-{millis}.png"));
+    walkie.lock().unwrap().capturing = true;
+    thread::sleep(Duration::from_millis(100));
     let result = capture::interactive(&path);
 
     let mut w = walkie.lock().unwrap();
+    w.capturing = false;
     match result {
         Shot::Saved if matches!(w.state, State::Recording { generation: g, .. } if g == generation) => {
             w.attachments.shots.push(path);
@@ -363,17 +482,17 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
             let _ = xclip.stdin.take().unwrap().write_all(text.as_bytes());
         }
         w.generation += 1;
-        w.state = State::Holding { generation: w.generation };
+        w.state = State::Holding { generation: w.generation, since: Instant::now() };
         let title = format!("📻 Envoi dans {} s — Entrée : envoyer · Échap : annuler", cfg.hold.as_secs_f32());
         w.notify(&title, &text, 0);
         w.generation
     };
 
-    let holding = || matches!(walkie.lock().unwrap().state, State::Holding { generation: g } if g == generation);
+    let holding = || matches!(walkie.lock().unwrap().state, State::Holding { generation: g, .. } if g == generation);
     let answer = await_answer(cfg.hold, holding);
 
     let mut w = walkie.lock().unwrap();
-    if !matches!(w.state, State::Holding { generation: g } if g == generation) {
+    if !matches!(w.state, State::Holding { generation: g, .. } if g == generation) {
         return;
     }
     if matches!(answer, Answer::Cancel) {
@@ -403,7 +522,11 @@ fn serve() {
         generation: 0,
         notification_id: None,
         attachments: Attachments::default(),
+        level: 0.0,
+        capturing: false,
     }));
+    let (watched, hold) = (walkie.clone(), cfg.hold);
+    thread::spawn(move || overlay::run(|| look(&watched.lock().unwrap(), hold)));
 
     let path = socket_path();
     let _ = std::fs::remove_file(&path);
