@@ -2,7 +2,7 @@ use std::f32::consts::TAU;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use tiny_skia::{Color, FillRule, LineCap, Paint, PathBuilder, Pixmap, Stroke, Transform};
+use tiny_skia::{Color, FillRule, LineCap, Paint, PathBuilder, Pixmap, Rect, Stroke, Transform};
 use x11rb::connection::Connection;
 use x11rb::protocol::shape::SK;
 use x11rb::protocol::xfixes::ConnectionExt as _;
@@ -12,15 +12,18 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 
-const SIZE: u16 = 44;
+const WIDTH: u16 = 108;
+const HEIGHT: u16 = 38;
+const SYMBOL: f32 = 19.0;
 const OFFSET: i16 = 16;
 const RED: (u8, u8, u8) = (229, 57, 53);
 const ORANGE: (u8, u8, u8) = (251, 140, 0);
 const GREEN: (u8, u8, u8) = (67, 160, 71);
+const GREY: (u8, u8, u8) = (150, 150, 150);
 
 pub enum Look {
     Hidden,
-    Listening { level: f32, attachments: usize },
+    Listening { wave: Vec<(f32, bool)>, attachments: usize },
     Transcribing,
     Holding { remaining: f32 },
 }
@@ -57,7 +60,7 @@ impl Overlay {
         conn.create_colormap(ColormapAlloc::NONE, colormap, root, visual).ok()?;
         let window = conn.generate_id().ok()?;
         let aux = CreateWindowAux::new().background_pixel(0).border_pixel(0).override_redirect(1).colormap(colormap);
-        conn.create_window(32, window, root, 0, 0, SIZE, SIZE, 0, WindowClass::INPUT_OUTPUT, visual, &aux).ok()?;
+        conn.create_window(32, window, root, 0, 0, WIDTH, HEIGHT, 0, WindowClass::INPUT_OUTPUT, visual, &aux).ok()?;
         conn.xfixes_query_version(5, 0).ok()?.reply().ok()?;
         let region = conn.generate_id().ok()?;
         conn.xfixes_create_region(region, &[]).ok()?;
@@ -87,32 +90,36 @@ impl Overlay {
             self.mapped = true;
         }
         let bgra: Vec<u8> = pixmap.data().chunks_exact(4).flat_map(|rgba| [rgba[2], rgba[1], rgba[0], rgba[3]]).collect();
-        self.conn.put_image(ImageFormat::Z_PIXMAP, self.window, self.gc, SIZE, SIZE, 0, 0, 0, 32, &bgra).ok()?;
+        self.conn.put_image(ImageFormat::Z_PIXMAP, self.window, self.gc, WIDTH, HEIGHT, 0, 0, 0, 32, &bgra).ok()?;
         self.conn.flush().ok()
     }
 }
 
 fn draw(look: &Look, time: f32) -> Option<Pixmap> {
-    let mut pixmap = Pixmap::new(SIZE.into(), SIZE.into())?;
-    let center = f32::from(SIZE) / 2.0;
-    match *look {
+    let mut pixmap = Pixmap::new(WIDTH.into(), HEIGHT.into())?;
+    match look {
         Look::Hidden => return None,
-        Look::Listening { level, attachments } => {
-            circle(&mut pixmap, center, center, 8.0 + level * 12.0, color(RED, 70));
-            circle(&mut pixmap, center, center, 7.0, color(RED, 230));
-            for i in 0..attachments.min(5) {
-                let x = 8.0 + i as f32 * 7.0;
-                circle(&mut pixmap, x, f32::from(SIZE) - 4.0, 3.5, color((40, 40, 40), 200));
-                circle(&mut pixmap, x, f32::from(SIZE) - 4.0, 2.5, Color::WHITE);
+        Look::Listening { wave, attachments } => {
+            rounded(&mut pixmap, f32::from(WIDTH), f32::from(HEIGHT), color((30, 30, 30), 150));
+            circle(&mut pixmap, SYMBOL, SYMBOL, 7.0, color(RED, 230));
+            for (i, &(height, speech)) in wave.iter().enumerate() {
+                let bar = (height * 24.0).max(2.0);
+                let rect = Rect::from_xywh(36.0 + i as f32 * 5.0, SYMBOL - bar / 2.0, 3.0, bar);
+                if let Some(rect) = rect {
+                    pixmap.fill_rect(rect, &paint(color(if speech { RED } else { GREY }, 230)), Transform::identity(), None);
+                }
+            }
+            for i in 0..(*attachments).min(5) {
+                circle(&mut pixmap, 12.0 + i as f32 * 6.0, f32::from(HEIGHT) - 4.0, 2.0, Color::WHITE);
             }
         }
         Look::Transcribing => {
             let start = time * TAU;
-            arc(&mut pixmap, center, 10.0, start, start + TAU * 0.7, color(ORANGE, 230));
+            arc(&mut pixmap, 10.0, start, start + TAU * 0.7, color(ORANGE, 230));
         }
         Look::Holding { remaining } => {
-            arc(&mut pixmap, center, 10.0, -TAU / 4.0, -TAU / 4.0 + TAU * remaining, color(GREEN, 230));
-            circle(&mut pixmap, center, center, 4.0, color(GREEN, 230));
+            arc(&mut pixmap, 10.0, -TAU / 4.0, -TAU / 4.0 + TAU * remaining, color(GREEN, 230));
+            circle(&mut pixmap, SYMBOL, SYMBOL, 4.0, color(GREEN, 230));
         }
     }
     Some(pixmap)
@@ -134,12 +141,25 @@ fn circle(pixmap: &mut Pixmap, x: f32, y: f32, radius: f32, color: Color) {
     }
 }
 
-fn arc(pixmap: &mut Pixmap, center: f32, radius: f32, from: f32, to: f32, color: Color) {
+fn rounded(pixmap: &mut Pixmap, width: f32, height: f32, color: Color) {
+    let radius = height / 2.0;
+    let mut builder = PathBuilder::new();
+    builder.push_circle(radius, radius, radius);
+    builder.push_circle(width - radius, radius, radius);
+    if let Some(rect) = Rect::from_xywh(radius, 0.0, width - height, height) {
+        builder.push_rect(rect);
+    }
+    if let Some(path) = builder.finish() {
+        pixmap.fill_path(&path, &paint(color), FillRule::Winding, Transform::identity(), None);
+    }
+}
+
+fn arc(pixmap: &mut Pixmap, radius: f32, from: f32, to: f32, color: Color) {
     let mut builder = PathBuilder::new();
     let steps = 48;
     for i in 0..=steps {
         let angle = from + (to - from) * i as f32 / steps as f32;
-        let (x, y) = (center + radius * angle.cos(), center + radius * angle.sin());
+        let (x, y) = (SYMBOL + radius * angle.cos(), SYMBOL + radius * angle.sin());
         if i == 0 { builder.move_to(x, y) } else { builder.line_to(x, y) }
     }
     if let Some(path) = builder.finish() {
@@ -150,10 +170,14 @@ fn arc(pixmap: &mut Pixmap, center: f32, radius: f32, from: f32, to: f32, color:
 
 #[cfg(test)]
 mod tests {
-    use super::{Look, SIZE, draw};
+    use super::{Look, draw};
 
-    fn opaque_pixels(look: &Look) -> usize {
-        draw(look, 0.0).unwrap().data().chunks_exact(4).filter(|rgba| rgba[3] > 0).count()
+    fn painted(look: &Look, keep: impl Fn(&[u8]) -> bool) -> usize {
+        draw(look, 0.0).unwrap().data().chunks_exact(4).filter(|rgba| keep(rgba)).count()
+    }
+
+    fn red(rgba: &[u8]) -> bool {
+        rgba[0] > 150 && rgba[1] < 100
     }
 
     #[test]
@@ -162,17 +186,17 @@ mod tests {
     }
 
     #[test]
-    fn le_halo_grandit_avec_la_voix() {
-        let silent = opaque_pixels(&Look::Listening { level: 0.0, attachments: 0 });
-        let loud = opaque_pixels(&Look::Listening { level: 1.0, attachments: 0 });
-        assert!(loud > silent);
-        assert!(loud < usize::from(SIZE) * usize::from(SIZE));
+    fn la_wave_grandit_avec_la_voix_et_rougit_au_dessus_du_seuil() {
+        let noise = painted(&Look::Listening { wave: vec![(0.2, false); 14], attachments: 0 }, red);
+        let speech = painted(&Look::Listening { wave: vec![(0.8, true); 14], attachments: 0 }, red);
+        assert!(speech > noise * 2);
     }
 
     #[test]
     fn l_anneau_d_attente_se_vide() {
-        let full = opaque_pixels(&Look::Holding { remaining: 1.0 });
-        let almost_done = opaque_pixels(&Look::Holding { remaining: 0.1 });
+        let opaque = |rgba: &[u8]| rgba[3] > 0;
+        let full = painted(&Look::Holding { remaining: 1.0 }, opaque);
+        let almost_done = painted(&Look::Holding { remaining: 0.1 }, opaque);
         assert!(full > almost_done);
     }
 }

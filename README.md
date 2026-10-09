@@ -16,7 +16,7 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
    - <kbd>Échap</kbd> ou <kbd>Super</kbd>+<kbd>Q</kbd> : annuler.
 5. Un indicateur suit le curseur pendant tout le cycle :
-   - 🔴 rond rouge qui pulse avec la voix pendant l'écoute (un point blanc par pièce jointe) ;
+   - 🔴 pendant l'écoute : rond rouge et forme d'onde du micro — barres **rouges** quand le son dépasse le seuil de parole, **grises** pour le bruit de fond (un point blanc par pièce jointe). Si tout reste rouge alors que tu ne parles plus, le micro capte autre chose (musique, son d'un call) et l'arrêt automatique ne se déclenchera pas ;
    - 🟠 arc orange qui tourne pendant la transcription ;
    - 🟢 anneau vert qui se vide pendant les 5 s d'attente.
 
@@ -160,3 +160,4 @@ journalctl --user -u walkie-talkie -f
 - **Transcription incompréhensible** : volume du micro, bruit de fond, ou langue (`WALKIE_LANG`).
 - **Le micro se coupe trop tôt ou jamais** : le seuil s'adapte au bruit de fond (5 × le bruit ambiant, au moins 1000) ; augmenter `WALKIE_SILENCE` si tu fais de longues pauses, ou `0` pour couper uniquement au raccourci.
 - **Pas d'indicateur près du curseur** : il faut un compositeur (GNOME X11 en a un).
+- **« Rien entendu » pendant un call** : avec des haut-parleurs, le micro capte aussi le son du call ; Whisper prend souvent ce mélange pour de la musique (`[Musique]`, retiré du texte). Utiliser un casque pendant les calls.

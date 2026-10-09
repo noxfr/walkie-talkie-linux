@@ -31,7 +31,8 @@ struct Walkie {
     generation: u64,
     notification_id: Option<String>,
     attachments: Attachments,
-    level: f32,
+    wave: Vec<u32>,
+    threshold: u32,
     capturing: bool,
 }
 
@@ -273,6 +274,7 @@ fn start_recording(w: &mut Walkie, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<Whispe
     w.generation += 1;
     w.state = State::Recording { recorder, generation: w.generation };
     w.attachments = Attachments::default();
+    w.wave.clear();
     w.notify_recording();
     let generation = w.generation;
     let watched = walkie.clone();
@@ -299,13 +301,20 @@ fn frame_rms(frame: &[u8]) -> u32 {
     (sum / (frame.len() / 2) as f64).sqrt() as u32
 }
 
+const MIN_SPEECH_LEVEL: u32 = 1000;
+const WAVE_BARS: usize = 14;
+
+fn speech_threshold(levels: &[u32]) -> u32 {
+    let mut sorted = levels.to_vec();
+    sorted.sort_unstable();
+    sorted.get(sorted.len() / 10).map_or(0, |noise| noise.saturating_mul(5)).max(MIN_SPEECH_LEVEL)
+}
+
 fn silence_reached(levels: &[u32], quiet_frames: usize) -> bool {
     if quiet_frames == 0 || levels.len() <= quiet_frames {
         return false;
     }
-    let mut sorted = levels.to_vec();
-    sorted.sort_unstable();
-    let threshold = sorted[sorted.len() / 10].saturating_mul(5).max(1000);
+    let threshold = speech_threshold(levels);
     let quiet = levels.iter().rev().take_while(|&&level| level <= threshold).count();
     quiet >= quiet_frames && levels.iter().any(|&level| level > threshold)
 }
@@ -327,11 +336,12 @@ fn watch_level(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc
         if !matches!(w.state, State::Recording { generation: g, .. } if g == generation) {
             return;
         }
-        if let Some(&rms) = frames.last() {
-            w.level = (rms as f32 / 6000.0).min(1.0);
-        }
         let capturing = w.capturing;
         levels.extend(frames.iter().map(|&rms| if capturing { u32::MAX } else { rms }));
+        w.wave.extend(&frames);
+        let excess = w.wave.len().saturating_sub(WAVE_BARS);
+        w.wave.drain(..excess);
+        w.threshold = speech_threshold(&levels);
         if silence_reached(&levels, quiet_frames)
             && let State::Recording { recorder, .. } = std::mem::replace(&mut w.state, State::Transcribing)
         {
@@ -407,7 +417,7 @@ fn look(w: &Walkie, hold: Duration) -> Look {
     match w.state {
         State::Idle => Look::Hidden,
         State::Recording { .. } => Look::Listening {
-            level: w.level,
+            wave: w.wave.iter().map(|&rms| ((rms as f32 / 12000.0).sqrt().min(1.0), rms > w.threshold)).collect(),
             attachments: w.attachments.shots.len() + w.attachments.selections.len(),
         },
         State::Transcribing => Look::Transcribing,
@@ -522,7 +532,8 @@ fn serve() {
         generation: 0,
         notification_id: None,
         attachments: Attachments::default(),
-        level: 0.0,
+        wave: Vec::new(),
+        threshold: MIN_SPEECH_LEVEL,
         capturing: false,
     }));
     let (watched, hold) = (walkie.clone(), cfg.hold);
