@@ -28,9 +28,9 @@ sudo apt install xdotool xclip cmake clang
 
 Rust doit être installé ([rustup](https://rustup.rs)). `pw-record` (PipeWire) et `notify-send` sont présents par défaut sur Ubuntu.
 
-### 2. GPU NVIDIA (optionnel, recommandé)
+### 2. GPU NVIDIA (optionnel)
 
-La transcription passe de ~2,5 s (CPU) à ~1,5 s (GPU) pour une phrase courte.
+Gain modeste avec le modèle `small` sur un petit GPU (voir [Performances](#performances)) ; plus utile pour un modèle plus gros (`medium`) ou pour laisser le CPU libre.
 
 ```bash
 sudo apt install nvidia-cuda-toolkit g++-12
@@ -84,6 +84,17 @@ Variables de `install.sh` :
 | `WALKIE_MODEL_NAME` | `small` | modèle à télécharger (`base`, `medium`… ; `medium` est plus précis, raisonnable avec un GPU) |
 
 Exemple : `WALKIE_MODEL_NAME=medium ./install.sh`
+
+## Performances
+
+Temps de transcription d'une phrase de 4,5 s, modèle `small`, langue `fr`, 4 passes :
+
+| matériel | temps |
+|---|---|
+| CPU Intel i7-12700H (10 threads) | 2,6 – 2,8 s |
+| GPU NVIDIA T600 Laptop 4 Go (CUDA 12.0) | 1,8 – 2,8 s |
+
+Whisper traite toujours une fenêtre de 30 s : le temps varie peu avec la longueur de la phrase. `WALKIE_LANG=auto` ajoute une détection de langue qui double à peu près le temps.
 
 ## Dépannage
 
