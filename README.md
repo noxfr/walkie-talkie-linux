@@ -5,8 +5,8 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 
 ## Comment ça marche
 
-1. <kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> : le micro s'ouvre (notification « Écoute… »).
-2. <kbd>Super</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd> à nouveau : le micro se ferme, la fenêtre active est mémorisée, la transcription démarre (Whisper en local, rien ne sort de la machine).
+1. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Espace</kbd> : le micro s'ouvre (notification « Écoute… »).
+2. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Espace</kbd> à nouveau : le micro se ferme, la fenêtre active est mémorisée, la transcription démarre (Whisper en local, rien ne sort de la machine).
 3. Le texte s'affiche en notification et part **5 s plus tard** dans la fenêtre mémorisée, suivi d'Entrée. Le même raccourci pendant ces 5 s **annule**.
 4. Le presse-papiers garde toujours la dernière phrase transcrite.
 
@@ -30,7 +30,7 @@ Avec `nvcc` présent (`nvidia-cuda-toolkit`), la compilation active CUDA.
 | `WALKIE_LANG` | `fr` | langue (`en`, `auto`… ; `auto` double le temps de transcription) |
 | `WALKIE_HOLD` | `5` | secondes avant envoi |
 | `WALKIE_MODEL` | `~/.local/share/walkie-talkie/ggml-small.bin` | modèle whisper.cpp |
-| `WALKIE_SHORTCUT` (install) | `<Super><Alt>d` | raccourci GNOME |
+| `WALKIE_SHORTCUT` (install) | `<Primary><Alt>space` | raccourci GNOME |
 | `WALKIE_MODEL_NAME` (install) | `small` | modèle à télécharger (`base`, `medium`…) |
 
 Logs : `journalctl --user -u walkie-talkie -f`

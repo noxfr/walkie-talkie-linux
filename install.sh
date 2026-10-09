@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SHORTCUT="${WALKIE_SHORTCUT:-<Super><Alt>d}"
+SHORTCUT="${WALKIE_SHORTCUT:-<Primary><Alt>space}"
 MODEL="${WALKIE_MODEL_NAME:-small}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/walkie-talkie"
 
