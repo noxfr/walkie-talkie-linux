@@ -1,6 +1,6 @@
 [package]
 name = "walkie-talkie"
-version = "0.3.0"
+version = "0.4.0"
 description = "Dictée vocale vers la fenêtre active sous Linux, inspirée de victorrentea/walkie-talkie"
 edition = "2024"
 
