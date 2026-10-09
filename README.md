@@ -88,12 +88,12 @@ Exemple : `WALKIE_MODEL_NAME=medium ./install.sh`
 
 ## Performances
 
-Temps de transcription d'une phrase de 4,5 s, modèle `small`, langue `fr`, 4 passes :
+Temps de transcription d'une phrase de 4,5 s, langue `fr`, 4 passes :
 
-| matériel | temps |
-|---|---|
-| CPU Intel i7-12700H (10 threads) | 2,6 – 2,8 s |
-| GPU NVIDIA T600 Laptop 4 Go (CUDA 12.0) | 1,8 – 2,8 s |
+| matériel | `small` (466 Mo) | `medium` (1,5 Go) |
+|---|---|---|
+| CPU Intel i7-12700H (10 threads) | 2,6 – 2,8 s | 7,4 – 8,1 s |
+| GPU NVIDIA T600 Laptop 4 Go (CUDA 12.0) | 1,8 – 2,8 s | 4,7 – 4,8 s |
 
 Whisper traite toujours une fenêtre de 30 s : le temps varie peu avec la longueur de la phrase. `WALKIE_LANG=auto` ajoute une détection de langue qui double à peu près le temps.
 
