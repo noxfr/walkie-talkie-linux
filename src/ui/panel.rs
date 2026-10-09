@@ -5,7 +5,7 @@ use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, T
 use fontdue::{Font, FontSettings};
 use tiny_skia::{FillRule, PathBuilder, Pixmap, Stroke, Transform};
 
-use crate::overlay::{GREEN, arc, color, paint};
+use super::canvas::{GREEN, arc, color, paint};
 
 const PADDING: f32 = 28.0;
 const TEXT_SIZE: f32 = 30.0;
