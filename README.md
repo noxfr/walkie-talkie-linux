@@ -6,11 +6,11 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 ## Utilisation
 
 1. Mettre le focus sur la fenêtre cible (le terminal où tourne Claude Code).
-2. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Espace</kbd> : le micro s'ouvre (notification « 🎙️ Écoute… »). Parler.
-3. <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Espace</kbd> à nouveau : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
+2. <kbd>Super</kbd>+<kbd>Q</kbd> : le micro s'ouvre (notification « 🎙️ Écoute… »). Parler.
+3. <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
 4. Le texte s'affiche en notification et part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée. Pendant ces 5 s :
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
-   - <kbd>Échap</kbd> ou <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Espace</kbd> : annuler.
+   - <kbd>Échap</kbd> ou <kbd>Super</kbd>+<kbd>Q</kbd> : annuler.
 5. Le presse-papiers garde toujours la dernière phrase transcrite (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
 
 ⚠️ Le texte est tapé dans la fenêtre retenue, quelle qu'elle soit (y compris un shell).
@@ -48,7 +48,7 @@ Le script :
 - compile et installe le binaire (`~/.cargo/bin/walkie-talkie`), avec CUDA si `nvcc` est présent ;
 - télécharge le modèle `ggml-small.bin` (~466 Mo) dans `~/.local/share/walkie-talkie/` ;
 - crée et démarre le service utilisateur systemd `walkie-talkie` (lancé avec la session graphique) ;
-- ajoute le raccourci GNOME <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>Espace</kbd>.
+- ajoute le raccourci GNOME <kbd>Super</kbd>+<kbd>Q</kbd> (<kbd>Super</kbd> = touche Windows) et le retire du Dock Ubuntu, qui l'utilise pour afficher ses numéros d'applications (<kbd>Super</kbd>+<kbd>1</kbd>…<kbd>9</kbd> restent actifs). Pour rendre la touche au Dock : `gsettings set org.gnome.shell.extensions.dash-to-dock shortcut "['<Super>q']"`.
 
 Relancer `./install.sh` après une mise à jour du code.
 
@@ -80,7 +80,7 @@ Variables de `install.sh` :
 
 | variable | défaut | rôle |
 |---|---|---|
-| `WALKIE_SHORTCUT` | `<Primary><Alt>space` | raccourci GNOME |
+| `WALKIE_SHORTCUT` | `<Super>q` | raccourci GNOME |
 | `WALKIE_MODEL_NAME` | `small` | modèle à télécharger (`base`, `medium`… ; `medium` est plus précis, raisonnable avec un GPU) |
 
 Exemple : `WALKIE_MODEL_NAME=medium ./install.sh`
@@ -102,6 +102,6 @@ Whisper traite toujours une fenêtre de 30 s : le temps varie peu avec la longue
 journalctl --user -u walkie-talkie -f
 ```
 
-- **Rien ne se passe au raccourci** : vérifier que le service tourne (`systemctl --user status walkie-talkie`) et que le raccourci inclut bien <kbd>Alt</kbd> (<kbd>Ctrl</kbd>+<kbd>Espace</kbd> seul tape un caractère nul dans un terminal).
+- **Rien ne se passe au raccourci** : vérifier que le service tourne (`systemctl --user status walkie-talkie`) et qu'aucune autre application ne capte <kbd>Super</kbd>+<kbd>Q</kbd> (`gsettings list-recursively | grep "<Super>q"`).
 - **« no GPU found » dans les logs** : le binaire est compilé sans CUDA ; installer `nvidia-cuda-toolkit` puis relancer `./install.sh`.
 - **Transcription incompréhensible** : volume du micro, bruit de fond, ou langue (`WALKIE_LANG`).

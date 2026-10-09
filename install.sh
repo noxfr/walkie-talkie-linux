@@ -2,7 +2,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-SHORTCUT="${WALKIE_SHORTCUT:-<Primary><Alt>space}"
+SHORTCUT="${WALKIE_SHORTCUT:-<Super>q}"
 MODEL="${WALKIE_MODEL_NAME:-small}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/walkie-talkie"
 
@@ -52,6 +52,10 @@ if [[ "$current" != *"$KEY_PATH"* ]]; then
   else
     gsettings set $SCHEMA custom-keybindings "${current%]*}, '$KEY_PATH']"
   fi
+fi
+DOCK=org.gnome.shell.extensions.dash-to-dock
+if [[ "$(gsettings get $DOCK shortcut 2>/dev/null)" == "['$SHORTCUT']" ]]; then
+  gsettings set $DOCK shortcut "[]"
 fi
 KB="$SCHEMA.custom-keybinding:$KEY_PATH"
 gsettings set "$KB" name "Walkie Talkie"
