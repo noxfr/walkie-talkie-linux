@@ -4,8 +4,8 @@ Dictée vocale sous Linux X11 : ce que tu dis est tapé dans la fenêtre qui a l
 Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-talkie), l'overlay macOS de Victor Rentea — réécrit de zéro en Rust, sans reprise de code.
 
 <p align="center">
-  <img src="docs/readme/panneau.png" width="700" alt="Le panneau d'attente au centre de l'écran : le texte dicté en gros, puis Entrée pour envoyer, Échap pour annuler, une capture et un texte surligné joints">
-  <br><sub>le texte dicté, 5 s pour relire avant l'envoi</sub>
+  <img src="docs/readme/demo.gif" width="800" alt="Démo : Super+Q, la forme d'onde suit la voix près du curseur, 2 s de silence ferment le micro, transcription, le panneau affiche le texte 5 s, puis il est tapé et envoyé dans Claude Code">
+  <br><sub>démo simulée (sous-titres à la place du son), dessinée par le code de l'outil</sub>
 </p>
 
 ## Utilisation
@@ -17,7 +17,9 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 
    L'indicateur compte les pièces jointes (un point blanc chacune). Le déroulé normal passe uniquement par l'indicateur et le panneau ; les notifications GNOME ne servent qu'aux cas particuliers (« Rien entendu », micro ou transcription indisponible, capture impossible), ou pour tout si le panneau ne peut pas s'afficher (aucune police système).
 3. **Se taire 2 s** (ou <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau) : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
-4. Le texte s'affiche en gros dans un panneau **au centre de l'écran où se trouve le curseur**, avec un anneau vert qui se vide, puis part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée (sans police système, une notification GNOME le remplace). Pendant ces 5 s :
+4. <img src="docs/readme/panneau.png" width="560" alt="Le panneau d'attente : le texte dicté en gros, puis Entrée pour envoyer, Échap pour annuler, une capture et un texte surligné joints">
+
+   Le texte s'affiche en gros dans un panneau **au centre de l'écran où se trouve le curseur**, avec un anneau vert qui se vide, puis part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée (sans police système, une notification GNOME le remplace). Pendant ces 5 s :
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
    - <kbd>Échap</kbd> ou <kbd>Super</kbd>+<kbd>Q</kbd> : annuler.
 5. Un indicateur suit le curseur pendant tout le cycle :
@@ -157,6 +159,12 @@ Les images de ce README sont dessinées par le code de l'indicateur et du pannea
 
 ```bash
 cargo test -- --ignored readme
+```
+
+Et la démo animée (nécessite `ffmpeg`) :
+
+```bash
+./docs/readme/demo.sh
 ```
 
 La CI GitHub Actions (`.github/workflows/ci.yml`) lance les tests, compile un binaire portable et vérifie une transcription réelle (phrase synthétisée par `espeak-ng`, modèle `base`).

@@ -3,7 +3,7 @@ use std::process::Command;
 
 use fontdue::layout::{CoordinateSystem, GlyphPosition, Layout, LayoutSettings, TextStyle};
 use fontdue::{Font, FontSettings};
-use tiny_skia::{FillRule, PathBuilder, Pixmap, Transform};
+use tiny_skia::{FillRule, PathBuilder, Pixmap, Stroke, Transform};
 
 use crate::overlay::{GREEN, arc, color, paint};
 
@@ -44,6 +44,13 @@ impl Panel {
         arc(&mut pixmap, PADDING + RING, footer_center, RING - 2.0, -TAU / 4.0, -TAU / 4.0 + TAU * remaining, color(GREEN, 230));
         self.blit(&mut pixmap, &foot, PADDING + 2.0 * RING + 12.0, footer_center - foot.height / 2.0, (190, 190, 190));
         Some(pixmap)
+    }
+
+    #[cfg(test)]
+    pub fn write(&self, pixmap: &mut Pixmap, text: &str, size: f32, x: f32, y: f32, rgb: (u8, u8, u8)) -> f32 {
+        let laid = self.layout(text, size, f32::MAX);
+        self.blit(pixmap, &laid, x, y, rgb);
+        laid.width
     }
 
     fn layout(&self, text: &str, size: f32, max_width: f32) -> Laid {
@@ -91,6 +98,8 @@ fn rounded_rect(pixmap: &mut Pixmap, width: f32, height: f32, radius: f32) {
     builder.close();
     if let Some(path) = builder.finish() {
         pixmap.fill_path(&path, &paint(color((25, 25, 25), 235)), FillRule::Winding, Transform::identity(), None);
+        let border = Stroke { width: 1.5, ..Stroke::default() };
+        pixmap.stroke_path(&path, &paint(color((255, 255, 255), 60)), &border, Transform::identity(), None);
     }
 }
 
