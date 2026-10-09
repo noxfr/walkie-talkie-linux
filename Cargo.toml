@@ -5,6 +5,7 @@ description = "Dictée vocale vers la fenêtre active sous Linux, inspirée de v
 edition = "2024"
 
 [dependencies]
+fontdue = "0.9.4"
 hound = "3.5.1"
 png = "0.18.1"
 tiny-skia = "0.12.0"

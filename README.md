@@ -3,6 +3,11 @@
 Dictée vocale sous Linux X11 : ce que tu dis est tapé dans la fenêtre qui a le focus — terminal (Claude Code…), éditeur, navigateur, messagerie.
 Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-talkie), l'overlay macOS de Victor Rentea — réécrit de zéro en Rust, sans reprise de code.
 
+<p align="center">
+  <img src="docs/readme/panneau.png" width="700" alt="Le panneau d'attente au centre de l'écran : le texte dicté en gros, puis Entrée pour envoyer, Échap pour annuler, une capture et un texte surligné joints">
+  <br><sub>le texte dicté, 5 s pour relire avant l'envoi</sub>
+</p>
+
 ## Utilisation
 
 1. Mettre le focus sur la fenêtre où écrire (n'importe laquelle).
@@ -12,10 +17,13 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 
    La notification compte les pièces jointes (📸 captures · ✂️ sélections).
 3. **Se taire 2 s** (ou <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau) : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
-4. Le texte s'affiche en notification et part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée. Pendant ces 5 s :
+4. Le texte s'affiche en gros dans un panneau **au centre de l'écran où se trouve le curseur**, avec un anneau vert qui se vide, puis part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée (sans police système, une notification GNOME le remplace). Pendant ces 5 s :
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
    - <kbd>Échap</kbd> ou <kbd>Super</kbd>+<kbd>Q</kbd> : annuler.
 5. Un indicateur suit le curseur pendant tout le cycle :
+
+   <img src="docs/readme/indicateur.png" width="620" alt="L'indicateur dans ses quatre états : écoute (rouge, avec deux pièces jointes), dictée simple (bleu), transcription (arc orange), attente (anneau vert)">
+
    - 🔴 pendant l'écoute : rond rouge et forme d'onde du micro — barres **rouges** quand le son dépasse le seuil de parole, **grises** pour le bruit de fond (un point blanc par pièce jointe). Si tout reste rouge alors que tu ne parles plus, le micro capte autre chose (musique, son d'un call) et l'arrêt automatique ne se déclenchera pas ;
    - 🟠 arc orange qui tourne pendant la transcription ;
    - 🟢 anneau vert qui se vide pendant les 5 s d'attente.
@@ -145,6 +153,12 @@ Tester la transcription d'un fichier WAV (16 kHz mono 16 bits), utile pour véri
 walkie-talkie transcribe fichier.wav
 ```
 
+Les images de ce README sont dessinées par le code de l'indicateur et du panneau ; après une modification de leur rendu :
+
+```bash
+cargo test -- --ignored readme
+```
+
 La CI GitHub Actions (`.github/workflows/ci.yml`) lance les tests, compile un binaire portable et vérifie une transcription réelle (phrase synthétisée par `espeak-ng`, modèle `base`).
 
 ## Publier une release
@@ -166,4 +180,6 @@ journalctl --user -u walkie-talkie -f
 - **Transcription incompréhensible** : volume du micro, bruit de fond, ou langue (`WALKIE_LANG`).
 - **Le micro se coupe trop tôt ou jamais** : le seuil s'adapte au bruit de fond (5 × le bruit ambiant, au moins 1000) ; augmenter `WALKIE_SILENCE` si tu fais de longues pauses, ou `0` pour couper uniquement au raccourci.
 - **Pas d'indicateur près du curseur** : il faut un compositeur (GNOME X11 en a un).
+- **« ❌ Micro indisponible »** : `pw-record` n'a pas pu démarrer — PipeWire ne tourne pas encore (juste après la connexion) ou n'est pas installé.
+- **« ❌ Transcription impossible »** : Whisper n'a pas pu s'exécuter, le plus souvent faute de mémoire GPU (modèle `medium` + d'autres applications sur une petite carte) ; repasser sur `small` (`./install.sh`) ou fermer ce qui occupe le GPU.
 - **« Rien entendu » pendant un call** : avec des haut-parleurs, le micro capte aussi le son du call ; Whisper prend souvent ce mélange pour de la musique (`[Musique]`, retiré du texte). Utiliser un casque pendant les calls.

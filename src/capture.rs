@@ -6,6 +6,7 @@ use std::process::Command;
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::xproto::{ConnectionExt as _, ImageFormat};
+use x11rb::rust_connection::RustConnection;
 
 pub enum Shot {
     Saved,
@@ -15,10 +16,10 @@ pub enum Shot {
 
 #[derive(Debug, PartialEq)]
 pub struct Rect {
-    x: i32,
-    y: i32,
-    width: u32,
-    height: u32,
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 struct Frame {
@@ -43,10 +44,8 @@ pub fn interactive(path: &Path) -> Shot {
     }
 }
 
-fn freeze() -> Option<(Frame, Rect)> {
-    let (conn, screen) = x11rb::connect(None).ok()?;
+pub fn monitor_under_pointer(conn: &RustConnection, screen: usize) -> Option<Rect> {
     let root = &conn.setup().roots[screen];
-    let (width, height) = (root.width_in_pixels, root.height_in_pixels);
     let pointer = conn.query_pointer(root.root).ok()?.reply().ok()?;
     let monitor = conn
         .randr_get_monitors(root.root, true)
@@ -58,7 +57,15 @@ fn freeze() -> Option<(Frame, Rect)> {
             })
         })
         .map(|m| Rect { x: m.x.into(), y: m.y.into(), width: m.width.into(), height: m.height.into() })
-        .unwrap_or(Rect { x: 0, y: 0, width: width.into(), height: height.into() });
+        .unwrap_or(Rect { x: 0, y: 0, width: root.width_in_pixels.into(), height: root.height_in_pixels.into() });
+    Some(monitor)
+}
+
+fn freeze() -> Option<(Frame, Rect)> {
+    let (conn, screen) = x11rb::connect(None).ok()?;
+    let root = &conn.setup().roots[screen];
+    let (width, height) = (root.width_in_pixels, root.height_in_pixels);
+    let monitor = monitor_under_pointer(&conn, screen)?;
 
     let image = conn.get_image(ImageFormat::Z_PIXMAP, root.root, 0, 0, width, height, u32::MAX).ok()?.reply().ok()?;
     let rgb = image.data.chunks_exact(4).flat_map(|bgrx| [bgrx[2], bgrx[1], bgrx[0]]).collect();
