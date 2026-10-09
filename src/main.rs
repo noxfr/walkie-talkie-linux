@@ -350,15 +350,15 @@ fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
 }
 
 fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>, attachments: Attachments) {
-    let text = transcribe(ctx, &cfg.wav, &cfg.language);
+    let spoken = transcribe(ctx, &cfg.wav, &cfg.language);
+    let text = compose(&spoken, &attachments);
     let generation = {
         let mut w = walkie.lock().unwrap();
-        if text.is_empty() {
+        if spoken.is_empty() {
             w.state = State::Idle;
             w.notify("🤷 Rien entendu", "", 3000);
             return;
         }
-        let text = compose(&text, &attachments);
         if let Ok(mut xclip) = Command::new("xclip").args(["-selection", "clipboard"]).stdin(Stdio::piped()).spawn() {
             let _ = xclip.stdin.take().unwrap().write_all(text.as_bytes());
         }
