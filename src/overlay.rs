@@ -20,10 +20,11 @@ const RED: (u8, u8, u8) = (229, 57, 53);
 const ORANGE: (u8, u8, u8) = (251, 140, 0);
 const GREEN: (u8, u8, u8) = (67, 160, 71);
 const GREY: (u8, u8, u8) = (150, 150, 150);
+const BLUE: (u8, u8, u8) = (30, 136, 229);
 
 pub enum Look {
     Hidden,
-    Listening { wave: Vec<(f32, bool)>, attachments: usize },
+    Listening { plain: bool, wave: Vec<(f32, bool)>, attachments: usize },
     Transcribing,
     Holding { remaining: f32 },
 }
@@ -99,14 +100,15 @@ fn draw(look: &Look, time: f32) -> Option<Pixmap> {
     let mut pixmap = Pixmap::new(WIDTH.into(), HEIGHT.into())?;
     match look {
         Look::Hidden => return None,
-        Look::Listening { wave, attachments } => {
+        Look::Listening { plain, wave, attachments } => {
+            let voice = if *plain { BLUE } else { RED };
             rounded(&mut pixmap, f32::from(WIDTH), f32::from(HEIGHT), color((30, 30, 30), 150));
-            circle(&mut pixmap, SYMBOL, SYMBOL, 7.0, color(RED, 230));
+            circle(&mut pixmap, SYMBOL, SYMBOL, 7.0, color(voice, 230));
             for (i, &(height, speech)) in wave.iter().enumerate() {
                 let bar = (height * 24.0).max(2.0);
                 let rect = Rect::from_xywh(36.0 + i as f32 * 5.0, SYMBOL - bar / 2.0, 3.0, bar);
                 if let Some(rect) = rect {
-                    pixmap.fill_rect(rect, &paint(color(if speech { RED } else { GREY }, 230)), Transform::identity(), None);
+                    pixmap.fill_rect(rect, &paint(color(if speech { voice } else { GREY }, 230)), Transform::identity(), None);
                 }
             }
             for i in 0..(*attachments).min(5) {
@@ -187,9 +189,17 @@ mod tests {
 
     #[test]
     fn la_wave_grandit_avec_la_voix_et_rougit_au_dessus_du_seuil() {
-        let noise = painted(&Look::Listening { wave: vec![(0.2, false); 14], attachments: 0 }, red);
-        let speech = painted(&Look::Listening { wave: vec![(0.8, true); 14], attachments: 0 }, red);
+        let noise = painted(&Look::Listening { plain: false, wave: vec![(0.2, false); 14], attachments: 0 }, red);
+        let speech = painted(&Look::Listening { plain: false, wave: vec![(0.8, true); 14], attachments: 0 }, red);
         assert!(speech > noise * 2);
+    }
+
+    #[test]
+    fn la_dictee_simple_est_bleue() {
+        let blue = |rgba: &[u8]| rgba[2] > 150 && rgba[0] < 100;
+        let wave = vec![(0.8, true); 14];
+        assert_eq!(painted(&Look::Listening { plain: false, wave: wave.clone(), attachments: 0 }, blue), 0);
+        assert!(painted(&Look::Listening { plain: true, wave, attachments: 0 }, blue) > 0);
     }
 
     #[test]

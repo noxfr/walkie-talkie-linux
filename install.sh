@@ -4,6 +4,7 @@ cd "$(dirname "$0")"
 
 SHORTCUT="${WALKIE_SHORTCUT:-<Super>q}"
 SHOT_SHORTCUT="${WALKIE_SHOT_SHORTCUT:-<Super>w}"
+PLAIN_SHORTCUT="${WALKIE_PLAIN_SHORTCUT:-<Super>e}"
 MODEL="${WALKIE_MODEL_NAME:-small}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/walkie-talkie"
 
@@ -77,5 +78,6 @@ if [[ "$(gsettings get $DOCK shortcut 2>/dev/null)" == "['$SHORTCUT']" ]]; then
 fi
 add_shortcut walkie-talkie "Walkie Talkie" "$BIN toggle" "$SHORTCUT"
 add_shortcut walkie-talkie-shot "Walkie Talkie : capture" "$BIN shot" "$SHOT_SHORTCUT"
+add_shortcut walkie-talkie-plain "Walkie Talkie : dictée simple" "$BIN plain" "$PLAIN_SHORTCUT"
 
-echo "Installé. Dictée : $SHORTCUT — capture : $SHOT_SHORTCUT — logs : journalctl --user -u walkie-talkie -f"
+echo "Installé. Dictée : $SHORTCUT — dictée simple : $PLAIN_SHORTCUT — capture : $SHOT_SHORTCUT — logs : journalctl --user -u walkie-talkie -f"

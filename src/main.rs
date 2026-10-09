@@ -21,7 +21,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 enum State {
     Idle,
-    Recording { recorder: Child, generation: u64 },
+    Recording { recorder: Child, generation: u64, submit: bool },
     Transcribing,
     Holding { generation: u64, since: Instant },
 }
@@ -147,7 +147,8 @@ impl Walkie {
 
     fn notify_recording(&mut self) {
         let summary = self.attachments.summary();
-        self.notify("🎙️ Écoute…", &summary, 0);
+        let title = if matches!(self.state, State::Recording { submit: false, .. }) { "✏️ Dictée simple…" } else { "🎙️ Écoute…" };
+        self.notify(title, &summary, 0);
     }
 
     fn cancel(&mut self) {
@@ -282,17 +283,17 @@ mod tests {
     }
 }
 
-fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
+fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>, submit: bool) {
     let mut w = walkie.lock().unwrap();
     match std::mem::replace(&mut w.state, State::Transcribing) {
-        State::Idle => start_recording(&mut w, walkie, ctx, cfg),
-        State::Recording { recorder, .. } => stop_recording(&mut w, recorder, walkie, ctx, cfg),
+        State::Idle => start_recording(&mut w, walkie, ctx, cfg, submit),
+        State::Recording { recorder, submit, .. } => stop_recording(&mut w, recorder, submit, walkie, ctx, cfg),
         State::Transcribing => {}
         State::Holding { .. } => w.cancel(),
     }
 }
 
-fn start_recording(w: &mut Walkie, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
+fn start_recording(w: &mut Walkie, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>, submit: bool) {
     let _ = std::fs::remove_file(&cfg.wav);
     let recorder = Command::new("pw-record")
         .args(["--rate", "16000", "--channels", "1", "--format", "s16"])
@@ -300,25 +301,27 @@ fn start_recording(w: &mut Walkie, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<Whispe
         .spawn()
         .expect("pw-record introuvable");
     w.generation += 1;
-    w.state = State::Recording { recorder, generation: w.generation };
+    w.state = State::Recording { recorder, generation: w.generation, submit };
     w.attachments = Attachments::default();
     w.wave.clear();
     w.notify_recording();
     let generation = w.generation;
-    let watched = walkie.clone();
-    thread::spawn(move || watch_selection(&watched, generation));
+    if submit {
+        let watched = walkie.clone();
+        thread::spawn(move || watch_selection(&watched, generation));
+    }
     let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
     thread::spawn(move || watch_level(&walkie, &ctx, &cfg, generation));
 }
 
-fn stop_recording(w: &mut Walkie, mut recorder: Child, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
+fn stop_recording(w: &mut Walkie, mut recorder: Child, submit: bool, walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
     let window = output("xdotool", &["getactivewindow"]);
     run("kill", &["-INT", &recorder.id().to_string()]);
     let _ = recorder.wait();
     w.notify("⏳ Transcription…", "", 0);
     let attachments = std::mem::take(&mut w.attachments);
     let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
-    thread::spawn(move || hold(&walkie, &ctx, &cfg, window, attachments));
+    thread::spawn(move || hold(&walkie, &ctx, &cfg, window, attachments, submit));
 }
 
 const WAV_HEADER: u64 = 44;
@@ -371,9 +374,9 @@ fn watch_level(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc
         w.wave.drain(..excess);
         w.threshold = speech_threshold(&levels);
         if silence_reached(&levels, quiet_frames)
-            && let State::Recording { recorder, .. } = std::mem::replace(&mut w.state, State::Transcribing)
+            && let State::Recording { recorder, submit, .. } = std::mem::replace(&mut w.state, State::Transcribing)
         {
-            stop_recording(&mut w, recorder, walkie, ctx, cfg);
+            stop_recording(&mut w, recorder, submit, walkie, ctx, cfg);
             return;
         }
     }
@@ -444,7 +447,8 @@ fn look(w: &Walkie, hold: Duration) -> Look {
     }
     match w.state {
         State::Idle => Look::Hidden,
-        State::Recording { .. } => Look::Listening {
+        State::Recording { submit, .. } => Look::Listening {
+            plain: !submit,
             wave: w.wave.iter().map(|&rms| ((rms as f32 / 12000.0).sqrt().min(1.0), rms > w.threshold)).collect(),
             attachments: w.attachments.shots.len() + w.attachments.selections.len(),
         },
@@ -478,6 +482,10 @@ fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
     let generation = {
         let mut w = walkie.lock().unwrap();
         match w.state {
+            State::Recording { submit: false, .. } => {
+                w.notify("📸 Pas de capture en dictée simple", "", 3000);
+                return;
+            }
             State::Recording { generation, .. } => generation,
             _ => {
                 w.notify("📸 Capture possible seulement pendant une dictée", "", 3000);
@@ -506,7 +514,7 @@ fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
     }
 }
 
-fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>, attachments: Attachments) {
+fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>, attachments: Attachments, submit: bool) {
     let spoken = transcribe(ctx, &cfg.wav, &cfg.language);
     let terminal = window.as_deref().is_none_or(|window| is_terminal(&window_class(window)));
     let text = compose(&spoken, &attachments, terminal);
@@ -520,7 +528,8 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
         set_clipboard(&text);
         w.generation += 1;
         w.state = State::Holding { generation: w.generation, since: Instant::now() };
-        let title = format!("📻 Envoi dans {} s — Entrée : envoyer · Échap : annuler", cfg.hold.as_secs_f32());
+        let action = if submit { "📻 Envoi" } else { "✏️ Écriture" };
+        let title = format!("{action} dans {} s — Entrée : tout de suite · Échap : annuler", cfg.hold.as_secs_f32());
         w.notify(&title, &text, 0);
         w.generation
     };
@@ -551,8 +560,10 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
         set_clipboard(&text);
     }
     thread::sleep(Duration::from_millis(300));
-    run("xdotool", &["key", "--clearmodifiers", "Return"]);
-    w.notify("✅ Envoyé", &text, 3000);
+    if submit {
+        run("xdotool", &["key", "--clearmodifiers", "Return"]);
+    }
+    w.notify(if submit { "✅ Envoyé" } else { "✅ Écrit" }, &text, 3000);
 }
 
 fn set_clipboard(text: &str) {
@@ -590,7 +601,8 @@ fn serve() {
         let mut buf = [0u8; 16];
         let n = conn.read(&mut buf).unwrap_or(0);
         match &buf[..n] {
-            b"toggle" => toggle(&walkie, &ctx, &cfg),
+            b"toggle" => toggle(&walkie, &ctx, &cfg, true),
+            b"plain" => toggle(&walkie, &ctx, &cfg, false),
             b"shot" => {
                 let (walkie, cfg) = (walkie.clone(), cfg.clone());
                 thread::spawn(move || shot(&walkie, &cfg));
@@ -613,10 +625,10 @@ fn main() {
             let cfg = config();
             println!("{}", transcribe(&load_model(&cfg), Path::new(&wav), &cfg.language));
         }
-        Some(command @ ("toggle" | "shot")) => send(command),
+        Some(command @ ("toggle" | "plain" | "shot")) => send(command),
         None => send("toggle"),
         Some(other) => {
-            eprintln!("usage : walkie-talkie [serve|toggle|shot|transcribe <fichier.wav>] (reçu : {other})");
+            eprintln!("usage : walkie-talkie [serve|toggle|plain|shot|transcribe <fichier.wav>] (reçu : {other})");
             std::process::exit(2);
         }
     }

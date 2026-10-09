@@ -28,6 +28,10 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 7. Les annotations de bruit que Whisper ajoute (`*Bruit de la porte*`, `[Musique]`, `(rires)`) sont retirées du texte.
 8. Le presse-papiers garde toujours le dernier prompt (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
 
+### Dictée simple (sans Entrée)
+
+<kbd>Super</kbd>+<kbd>E</kbd> au lieu de <kbd>Super</kbd>+<kbd>Q</kbd> : même déroulé, mais le texte est seulement **écrit** là où est le curseur, **sans appuyer sur Entrée** — pour Slack, un éditeur, un formulaire, quand on veut relire ou compléter avant d'envoyer. Pas de pièce jointe dans ce mode (ni capture, ni texte surligné). L'indicateur est **bleu** au lieu de rouge. Le silence ou l'un des deux raccourcis arrête la dictée.
+
 ⚠️ Le texte est tapé dans la fenêtre retenue, quelle qu'elle soit (y compris un shell), puis Entrée est pressée : dans une messagerie ou un formulaire, ça envoie.
 ⚠️ Pendant les 5 s d'attente, Entrée et Échap sont captées par Walkie Talkie et n'arrivent pas aux autres applications.
 ⚠️ Les captures s'accumulent dans `~/.cache/walkie-talkie/shots/` ; les supprimer de temps en temps.
@@ -78,7 +82,7 @@ Le binaire est compilé et installé dans `~/.cargo/bin/walkie-talkie`, avec CUD
 
 - télécharge le modèle `ggml-small.bin` (~466 Mo) dans `~/.local/share/walkie-talkie/` ;
 - crée et démarre le service utilisateur systemd `walkie-talkie` (lancé avec la session graphique) ;
-- ajoute les raccourcis GNOME <kbd>Super</kbd>+<kbd>Q</kbd> (dictée) et <kbd>Super</kbd>+<kbd>W</kbd> (capture) — <kbd>Super</kbd> = touche Windows — et retire <kbd>Super</kbd>+<kbd>Q</kbd> du Dock Ubuntu, qui l'utilise pour afficher ses numéros d'applications (<kbd>Super</kbd>+<kbd>1</kbd>…<kbd>9</kbd> restent actifs). Pour rendre la touche au Dock : `gsettings set org.gnome.shell.extensions.dash-to-dock shortcut "['<Super>q']"`.
+- ajoute les raccourcis GNOME <kbd>Super</kbd>+<kbd>Q</kbd> (dictée), <kbd>Super</kbd>+<kbd>E</kbd> (dictée simple) et <kbd>Super</kbd>+<kbd>W</kbd> (capture) — <kbd>Super</kbd> = touche Windows — et retire <kbd>Super</kbd>+<kbd>Q</kbd> du Dock Ubuntu, qui l'utilise pour afficher ses numéros d'applications (<kbd>Super</kbd>+<kbd>1</kbd>…<kbd>9</kbd> restent actifs). Pour rendre la touche au Dock : `gsettings set org.gnome.shell.extensions.dash-to-dock shortcut "['<Super>q']"`.
 
 `pw-record` (PipeWire), `notify-send` et `curl` sont présents par défaut sur Ubuntu. `slop` (sélection de zone pour les captures) est optionnel.
 
@@ -113,6 +117,7 @@ Variables de `install.sh` :
 |---|---|---|
 | `WALKIE_SHORTCUT` | `<Super>q` | raccourci GNOME de la dictée |
 | `WALKIE_SHOT_SHORTCUT` | `<Super>w` | raccourci GNOME de la capture d'écran |
+| `WALKIE_PLAIN_SHORTCUT` | `<Super>e` | raccourci GNOME de la dictée simple (sans Entrée) |
 | `WALKIE_MODEL_NAME` | `small` | modèle à télécharger (`base`, `medium`… ; `medium` est plus précis, raisonnable avec un GPU) |
 
 Exemple : `WALKIE_MODEL_NAME=medium ./install.sh`
