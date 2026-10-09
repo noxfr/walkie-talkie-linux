@@ -21,9 +21,10 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
    - 🟢 anneau vert qui se vide pendant les 5 s d'attente.
 
    Il laisse passer les clics et disparaît pendant les captures d'écran.
-6. Le prompt est tapé sur une seule ligne (un retour à la ligne l'enverrait trop tôt), pièces jointes à la suite :
-   `Corrige ça [texte sélectionné : « let x = 42; »] [capture d'écran : /home/moi/.cache/walkie-talkie/shots/shot-1791546302537.png]`.
-   Claude Code ouvre l'image à partir de son chemin.
+6. Le prompt est tapé sur une seule ligne (un retour à la ligne l'enverrait trop tôt), texte surligné à la suite. Les captures dépendent de la fenêtre cible :
+   - **terminal** (Ghostty, GNOME Terminal, kitty, IntelliJ…) : leur chemin est ajouté, Claude Code ouvre l'image à partir de lui —
+     `Corrige ça [texte sélectionné : « let x = 42; »] [capture d'écran : /home/moi/.cache/walkie-talkie/shots/shot-1791546302537.png]` ;
+   - **autre application** (Teams, Slack, appli Claude, navigateur…) : l'image elle-même est collée dans le message après le texte.
 7. Les annotations de bruit que Whisper ajoute (`*Bruit de la porte*`, `[Musique]`, `(rires)`) sont retirées du texte.
 8. Le presse-papiers garde toujours le dernier prompt (<kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>V</kbd> pour la recoller dans un terminal).
 

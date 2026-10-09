@@ -13,7 +13,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
+use x11rb::protocol::xproto::{AtomEnum, ConnectionExt, GrabMode, ModMask};
 use x11rb::rust_connection::RustConnection;
 use capture::Shot;
 use overlay::Look;
@@ -58,15 +58,34 @@ impl Attachments {
     }
 }
 
-fn compose(text: &str, attachments: &Attachments) -> String {
+fn compose(text: &str, attachments: &Attachments, shot_paths: bool) -> String {
     let mut parts = vec![text.to_string()];
     for selection in &attachments.selections {
         parts.push(format!("[texte sélectionné : « {} »]", selection.split_whitespace().collect::<Vec<_>>().join(" ")));
     }
-    for shot in &attachments.shots {
-        parts.push(format!("[capture d'écran : {}]", shot.display()));
+    if shot_paths {
+        for shot in &attachments.shots {
+            parts.push(format!("[capture d'écran : {}]", shot.display()));
+        }
     }
     parts.join(" ")
+}
+
+const TERMINALS: [&str; 12] =
+    ["ghostty", "gnome-terminal", "kitty", "alacritty", "xterm", "konsole", "tilix", "terminator", "wezterm", "foot", "urxvt", "jetbrains"];
+
+fn is_terminal(class: &str) -> bool {
+    let class = class.to_lowercase();
+    TERMINALS.iter().any(|terminal| class.contains(terminal))
+}
+
+fn window_class(window: &str) -> String {
+    let Ok(id) = window.parse::<u32>() else { return String::new() };
+    x11rb::connect(None)
+        .ok()
+        .and_then(|(conn, _)| conn.get_property(false, id, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 256).ok()?.reply().ok())
+        .map(|reply| String::from_utf8_lossy(&reply.value).into_owned())
+        .unwrap_or_default()
 }
 
 struct Config {
@@ -184,7 +203,7 @@ fn strip_annotations(text: &str) -> String {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{Attachments, compose, silence_reached, strip_annotations};
+    use super::{Attachments, compose, is_terminal, silence_reached, strip_annotations};
 
     #[test]
     fn retire_les_annotations_de_bruit() {
@@ -247,10 +266,19 @@ mod tests {
             shots: vec![PathBuf::from("/tmp/shot-1.png")],
         };
         assert_eq!(
-            compose("Corrige ça", &attachments),
+            compose("Corrige ça", &attachments, true),
             "Corrige ça [texte sélectionné : « let x = 42; »] [capture d'écran : /tmp/shot-1.png]"
         );
-        assert_eq!(compose("Juste du texte", &Attachments::default()), "Juste du texte");
+        assert_eq!(compose("Corrige ça", &attachments, false), "Corrige ça [texte sélectionné : « let x = 42; »]");
+        assert_eq!(compose("Juste du texte", &Attachments::default(), true), "Juste du texte");
+    }
+
+    #[test]
+    fn reconnait_les_terminaux_par_leur_classe() {
+        assert!(is_terminal("ghostty\0com.mitchellh.ghostty\0"));
+        assert!(is_terminal("jetbrains-idea\0jetbrains-idea\0"));
+        assert!(!is_terminal("brave-browser\0Brave-browser\0"));
+        assert!(!is_terminal("slack\0slack\0"));
     }
 }
 
@@ -480,7 +508,8 @@ fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
 
 fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>, attachments: Attachments) {
     let spoken = transcribe(ctx, &cfg.wav, &cfg.language);
-    let text = compose(&spoken, &attachments);
+    let terminal = window.as_deref().is_none_or(|window| is_terminal(&window_class(window)));
+    let text = compose(&spoken, &attachments, terminal);
     let generation = {
         let mut w = walkie.lock().unwrap();
         if spoken.is_empty() {
@@ -488,9 +517,7 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
             w.notify("🤷 Rien entendu", "", 3000);
             return;
         }
-        if let Ok(mut xclip) = Command::new("xclip").args(["-selection", "clipboard"]).stdin(Stdio::piped()).spawn() {
-            let _ = xclip.stdin.take().unwrap().write_all(text.as_bytes());
-        }
+        set_clipboard(&text);
         w.generation += 1;
         w.state = State::Holding { generation: w.generation, since: Instant::now() };
         let title = format!("📻 Envoi dans {} s — Entrée : envoyer · Échap : annuler", cfg.hold.as_secs_f32());
@@ -514,9 +541,24 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
         run("xdotool", &["windowactivate", "--sync", window]);
     }
     run("xdotool", &["type", "--clearmodifiers", "--delay", "4", "--", &text]);
+    if !terminal && !attachments.shots.is_empty() {
+        for shot in &attachments.shots {
+            run("xclip", &["-selection", "clipboard", "-t", "image/png", "-i", &shot.to_string_lossy()]);
+            thread::sleep(Duration::from_millis(200));
+            run("xdotool", &["key", "--clearmodifiers", "ctrl+v"]);
+            thread::sleep(Duration::from_millis(800));
+        }
+        set_clipboard(&text);
+    }
     thread::sleep(Duration::from_millis(300));
     run("xdotool", &["key", "--clearmodifiers", "Return"]);
     w.notify("✅ Envoyé", &text, 3000);
+}
+
+fn set_clipboard(text: &str) {
+    if let Ok(mut xclip) = Command::new("xclip").args(["-selection", "clipboard"]).stdin(Stdio::piped()).spawn() {
+        let _ = xclip.stdin.take().unwrap().write_all(text.as_bytes());
+    }
 }
 
 fn load_model(cfg: &Config) -> WhisperContext {
