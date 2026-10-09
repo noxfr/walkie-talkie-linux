@@ -8,7 +8,7 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 1. Mettre le focus sur la fenêtre où écrire (n'importe laquelle).
 2. <kbd>Super</kbd>+<kbd>Q</kbd> : le micro s'ouvre (notification « 🎙️ Écoute… »). Parler. Pendant la dictée, on peut joindre du contexte au prompt :
    - **texte surligné** : tout texte sélectionné à la souris pendant la dictée est joint (une sélection faite avant la dictée est ignorée) ;
-   - **capture d'écran** : <kbd>Super</kbd>+<kbd>W</kbd> capture l'écran sous la souris (PNG dans `~/.cache/walkie-talkie/shots/`), autant de fois que voulu.
+   - **capture d'écran** : <kbd>Super</kbd>+<kbd>W</kbd> fige l'écran, puis **glisser** pour capturer une zone, **cliquer** sur une fenêtre pour la capturer entière, ou <kbd>Échap</kbd> pour renoncer. Autant de fois que voulu ; PNG dans `~/.cache/walkie-talkie/shots/`. Sans `slop` installé, la capture prend tout l'écran sous la souris.
 
    La notification compte les pièces jointes (📸 captures · ✂️ sélections).
 3. <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
@@ -34,7 +34,7 @@ Testé sur Ubuntu 22.04 / 24.04, GNOME, X11 (pas Wayland : `xdotool` et la captu
 Binaire x86_64, transcription sur CPU (processeur avec AVX2 : Intel depuis 2013, AMD depuis 2015), glibc ≥ 2.35.
 
 ```bash
-sudo apt install xdotool xclip
+sudo apt install xdotool xclip slop
 ```
 
 ```bash
@@ -50,7 +50,7 @@ Le binaire est installé dans `~/.local/bin/walkie-talkie`. Pour mettre à jour 
 ### Option B — depuis les sources (pour le GPU NVIDIA)
 
 ```bash
-sudo apt install xdotool xclip cmake clang
+sudo apt install xdotool xclip slop cmake clang
 ```
 
 Rust doit être installé ([rustup](https://rustup.rs)). Pour le GPU NVIDIA (optionnel) :
@@ -73,7 +73,7 @@ Le binaire est compilé et installé dans `~/.cargo/bin/walkie-talkie`, avec CUD
 - crée et démarre le service utilisateur systemd `walkie-talkie` (lancé avec la session graphique) ;
 - ajoute les raccourcis GNOME <kbd>Super</kbd>+<kbd>Q</kbd> (dictée) et <kbd>Super</kbd>+<kbd>W</kbd> (capture) — <kbd>Super</kbd> = touche Windows — et retire <kbd>Super</kbd>+<kbd>Q</kbd> du Dock Ubuntu, qui l'utilise pour afficher ses numéros d'applications (<kbd>Super</kbd>+<kbd>1</kbd>…<kbd>9</kbd> restent actifs). Pour rendre la touche au Dock : `gsettings set org.gnome.shell.extensions.dash-to-dock shortcut "['<Super>q']"`.
 
-`pw-record` (PipeWire), `notify-send` et `curl` sont présents par défaut sur Ubuntu.
+`pw-record` (PipeWire), `notify-send` et `curl` sont présents par défaut sur Ubuntu. `slop` (sélection de zone pour les captures) est optionnel.
 
 ### Micro
 

@@ -13,6 +13,7 @@ use x11rb::connection::Connection;
 use x11rb::protocol::Event;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, ModMask};
 use x11rb::rust_connection::RustConnection;
+use capture::Shot;
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 enum State {
@@ -320,18 +321,31 @@ fn watch_selection(walkie: &Arc<Mutex<Walkie>>, generation: u64) {
 }
 
 fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
-    let mut w = walkie.lock().unwrap();
-    if !matches!(w.state, State::Recording { .. }) {
-        w.notify("📸 Capture possible seulement pendant une dictée", "", 3000);
-        return;
-    }
+    let generation = {
+        let mut w = walkie.lock().unwrap();
+        match w.state {
+            State::Recording { generation, .. } => generation,
+            _ => {
+                w.notify("📸 Capture possible seulement pendant une dictée", "", 3000);
+                return;
+            }
+        }
+    };
     let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
     let path = cfg.shots_dir.join(format!("shot-{millis}.png"));
-    if capture::screen_under_pointer(&path).is_some() {
-        w.attachments.shots.push(path);
-        w.notify_recording();
-    } else {
-        w.notify("📸 Capture impossible", "", 3000);
+    let result = capture::interactive(&path);
+
+    let mut w = walkie.lock().unwrap();
+    match result {
+        Shot::Saved if matches!(w.state, State::Recording { generation: g, .. } if g == generation) => {
+            w.attachments.shots.push(path);
+            w.notify_recording();
+        }
+        Shot::Saved => {
+            let _ = std::fs::remove_file(path);
+        }
+        Shot::Cancelled => {}
+        Shot::Failed => w.notify("📸 Capture impossible", "", 3000),
     }
 }
 
@@ -401,7 +415,10 @@ fn serve() {
         let n = conn.read(&mut buf).unwrap_or(0);
         match &buf[..n] {
             b"toggle" => toggle(&walkie, &ctx, &cfg),
-            b"shot" => shot(&walkie, &cfg),
+            b"shot" => {
+                let (walkie, cfg) = (walkie.clone(), cfg.clone());
+                thread::spawn(move || shot(&walkie, &cfg));
+            }
             _ => {}
         }
     }
