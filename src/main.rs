@@ -166,6 +166,12 @@ impl Walkie {
         self.notification_id = id.or(self.notification_id.take());
     }
 
+    fn status(&mut self, title: &str, body: &str, timeout_ms: u32) {
+        if !overlay::PANEL_READY.load(Ordering::Relaxed) {
+            self.notify(title, body, timeout_ms);
+        }
+    }
+
     fn close_notification(&mut self) {
         if let Some(id) = self.notification_id.take() {
             run("gdbus", &[
@@ -178,12 +184,12 @@ impl Walkie {
     fn notify_recording(&mut self) {
         let summary = self.attachments.summary();
         let title = if matches!(self.state, State::Recording { submit: false, .. }) { "✏️ Dictée simple…" } else { "🎙️ Écoute…" };
-        self.notify(title, &summary, 0);
+        self.status(title, &summary, 0);
     }
 
     fn cancel(&mut self) {
         self.state = State::Idle;
-        self.notify("❌ Annulé", "Le texte reste dans le presse-papiers", 3000);
+        self.status("❌ Annulé", "Le texte reste dans le presse-papiers", 3000);
     }
 }
 
@@ -358,7 +364,7 @@ fn stop_recording(w: &mut Walkie, mut recorder: Child, submit: bool, walkie: &Ar
     let window = output("xdotool", &["getactivewindow"]);
     run("kill", &["-INT", &recorder.id().to_string()]);
     let _ = recorder.wait();
-    w.notify("⏳ Transcription…", "", 0);
+    w.status("⏳ Transcription…", "", 0);
     let attachments = std::mem::take(&mut w.attachments);
     let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
     thread::spawn(move || hold(&walkie, &ctx, &cfg, window, attachments, submit));
@@ -620,7 +626,7 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
     if submit {
         run("xdotool", &["key", "--clearmodifiers", "Return"]);
     }
-    walkie.lock().unwrap().notify(if submit { "✅ Envoyé" } else { "✅ Écrit" }, &text, 3000);
+    walkie.lock().unwrap().status(if submit { "✅ Envoyé" } else { "✅ Écrit" }, &text, 3000);
 }
 
 fn set_clipboard(text: &str) {

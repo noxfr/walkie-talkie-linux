@@ -11,11 +11,11 @@ Inspiré de [victorrentea/walkie-talkie](https://github.com/victorrentea/walkie-
 ## Utilisation
 
 1. Mettre le focus sur la fenêtre où écrire (n'importe laquelle).
-2. <kbd>Super</kbd>+<kbd>Q</kbd> : le micro s'ouvre (notification « 🎙️ Écoute… »). Parler. Pendant la dictée, on peut joindre du contexte au prompt :
+2. <kbd>Super</kbd>+<kbd>Q</kbd> : le micro s'ouvre (l'indicateur rouge apparaît près du curseur). Parler. Pendant la dictée, on peut joindre du contexte au prompt :
    - **texte surligné** : tout texte sélectionné à la souris pendant la dictée est joint (une sélection faite avant la dictée est ignorée) ;
    - **capture d'écran** : <kbd>Super</kbd>+<kbd>W</kbd> fige l'écran, puis **glisser** pour capturer une zone, **cliquer** sur une fenêtre pour la capturer entière, ou <kbd>Échap</kbd> pour renoncer. Autant de fois que voulu ; PNG dans `~/.cache/walkie-talkie/shots/`. Sans `slop` installé, la capture prend tout l'écran sous la souris.
 
-   La notification compte les pièces jointes (📸 captures · ✂️ sélections).
+   L'indicateur compte les pièces jointes (un point blanc chacune). Le déroulé normal passe uniquement par l'indicateur et le panneau ; les notifications GNOME ne servent qu'aux cas particuliers (« Rien entendu », micro ou transcription indisponible, capture impossible), ou pour tout si le panneau ne peut pas s'afficher (aucune police système).
 3. **Se taire 2 s** (ou <kbd>Super</kbd>+<kbd>Q</kbd> à nouveau) : le micro se ferme, la fenêtre active à cet instant est retenue comme cible, la transcription démarre (Whisper en local, rien ne sort de la machine).
 4. Le texte s'affiche en gros dans un panneau **au centre de l'écran où se trouve le curseur**, avec un anneau vert qui se vide, puis part **5 s plus tard** dans la fenêtre retenue, suivi d'Entrée (sans police système, une notification GNOME le remplace). Pendant ces 5 s :
    - <kbd>Entrée</kbd> : envoyer tout de suite ;
