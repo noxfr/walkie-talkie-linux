@@ -3,6 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 SHORTCUT="${WALKIE_SHORTCUT:-<Super>q}"
+SHOT_SHORTCUT="${WALKIE_SHOT_SHORTCUT:-<Super>w}"
 MODEL="${WALKIE_MODEL_NAME:-small}"
 DATA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/walkie-talkie"
 
@@ -53,22 +54,28 @@ systemctl --user enable --now walkie-talkie.service
 systemctl --user restart walkie-talkie.service
 
 SCHEMA=org.gnome.settings-daemon.plugins.media-keys
-KEY_PATH=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/walkie-talkie/
-current=$(gsettings get $SCHEMA custom-keybindings)
-if [[ "$current" != *"$KEY_PATH"* ]]; then
-  if [[ "$current" == "@as []" ]]; then
-    gsettings set $SCHEMA custom-keybindings "['$KEY_PATH']"
-  else
-    gsettings set $SCHEMA custom-keybindings "${current%]*}, '$KEY_PATH']"
+add_shortcut() {
+  local key_path=/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/$1/
+  local current
+  current=$(gsettings get $SCHEMA custom-keybindings)
+  if [[ "$current" != *"$key_path"* ]]; then
+    if [[ "$current" == "@as []" ]]; then
+      gsettings set $SCHEMA custom-keybindings "['$key_path']"
+    else
+      gsettings set $SCHEMA custom-keybindings "${current%]*}, '$key_path']"
+    fi
   fi
-fi
+  local kb="$SCHEMA.custom-keybinding:$key_path"
+  gsettings set "$kb" name "$2"
+  gsettings set "$kb" command "$3"
+  gsettings set "$kb" binding "$4"
+}
+
 DOCK=org.gnome.shell.extensions.dash-to-dock
 if [[ "$(gsettings get $DOCK shortcut 2>/dev/null)" == "['$SHORTCUT']" ]]; then
   gsettings set $DOCK shortcut "[]"
 fi
-KB="$SCHEMA.custom-keybinding:$KEY_PATH"
-gsettings set "$KB" name "Walkie Talkie"
-gsettings set "$KB" command "$BIN toggle"
-gsettings set "$KB" binding "$SHORTCUT"
+add_shortcut walkie-talkie "Walkie Talkie" "$BIN toggle" "$SHORTCUT"
+add_shortcut walkie-talkie-shot "Walkie Talkie : capture" "$BIN shot" "$SHOT_SHORTCUT"
 
-echo "Installé. Raccourci : $SHORTCUT — logs : journalctl --user -u walkie-talkie -f"
+echo "Installé. Dictée : $SHORTCUT — capture : $SHOT_SHORTCUT — logs : journalctl --user -u walkie-talkie -f"

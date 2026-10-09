@@ -1,3 +1,5 @@
+mod capture;
+
 use std::env;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -5,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
@@ -15,7 +17,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 enum State {
     Idle,
-    Recording { recorder: Child },
+    Recording { recorder: Child, generation: u64 },
     Transcribing,
     Holding { generation: u64 },
 }
@@ -24,6 +26,37 @@ struct Walkie {
     state: State,
     generation: u64,
     notification_id: Option<String>,
+    attachments: Attachments,
+}
+
+#[derive(Default)]
+struct Attachments {
+    selections: Vec<String>,
+    shots: Vec<PathBuf>,
+}
+
+impl Attachments {
+    fn add_selection(&mut self, text: &str) {
+        match self.selections.last_mut() {
+            Some(last) if text.contains(last.as_str()) || last.contains(text) => *last = text.to_string(),
+            _ => self.selections.push(text.to_string()),
+        }
+    }
+
+    fn summary(&self) -> String {
+        format!("📸 {} · ✂️ {}", self.shots.len(), self.selections.len())
+    }
+}
+
+fn compose(text: &str, attachments: &Attachments) -> String {
+    let mut parts = vec![text.to_string()];
+    for selection in &attachments.selections {
+        parts.push(format!("[texte sélectionné : « {} »]", selection.split_whitespace().collect::<Vec<_>>().join(" ")));
+    }
+    for shot in &attachments.shots {
+        parts.push(format!("[capture d'écran : {}]", shot.display()));
+    }
+    parts.join(" ")
 }
 
 struct Config {
@@ -31,6 +64,7 @@ struct Config {
     language: String,
     hold: Duration,
     wav: PathBuf,
+    shots_dir: PathBuf,
 }
 
 fn runtime_dir() -> PathBuf {
@@ -51,6 +85,10 @@ fn config() -> Config {
         language: env::var("WALKIE_LANG").unwrap_or("fr".into()),
         hold: Duration::from_secs_f32(env::var("WALKIE_HOLD").ok().and_then(|s| s.parse().ok()).unwrap_or(5.0)),
         wav: runtime_dir().join("walkie.wav"),
+        shots_dir: env::var("XDG_CACHE_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(env::var("HOME").unwrap()).join(".cache"))
+            .join("walkie-talkie/shots"),
     }
 }
 
@@ -74,6 +112,11 @@ impl Walkie {
         args.extend([title, body]);
         let id = output("notify-send", &args);
         self.notification_id = id.or(self.notification_id.take());
+    }
+
+    fn notify_recording(&mut self) {
+        let summary = self.attachments.summary();
+        self.notify("🎙️ Écoute…", &summary, 0);
     }
 
     fn cancel(&mut self) {
@@ -127,7 +170,9 @@ fn strip_annotations(text: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::strip_annotations;
+    use std::path::PathBuf;
+
+    use super::{Attachments, compose, strip_annotations};
 
     #[test]
     fn retire_les_annotations_de_bruit() {
@@ -140,6 +185,28 @@ mod tests {
         assert_eq!(strip_annotations("  Lance les tests  du module. "), "Lance les tests du module.");
         assert_eq!(strip_annotations("Ouvre la parenthèse ( sans la fermer"), "Ouvre la parenthèse ( sans la fermer");
     }
+
+    #[test]
+    fn une_selection_qui_grandit_remplace_la_precedente() {
+        let mut attachments = Attachments::default();
+        attachments.add_selection("fn ma");
+        attachments.add_selection("fn main() {");
+        attachments.add_selection("autre chose");
+        assert_eq!(attachments.selections, ["fn main() {", "autre chose"]);
+    }
+
+    #[test]
+    fn compose_le_prompt_sur_une_seule_ligne() {
+        let attachments = Attachments {
+            selections: vec!["let x =\n    42;".into()],
+            shots: vec![PathBuf::from("/tmp/shot-1.png")],
+        };
+        assert_eq!(
+            compose("Corrige ça", &attachments),
+            "Corrige ça [texte sélectionné : « let x = 42; »] [capture d'écran : /tmp/shot-1.png]"
+        );
+        assert_eq!(compose("Juste du texte", &Attachments::default()), "Juste du texte");
+    }
 }
 
 fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Config>) {
@@ -151,16 +218,21 @@ fn toggle(walkie: &Arc<Mutex<Walkie>>, ctx: &Arc<WhisperContext>, cfg: &Arc<Conf
                 .arg(&cfg.wav)
                 .spawn()
                 .expect("pw-record introuvable");
-            w.state = State::Recording { recorder };
-            w.notify("🎙️ Écoute…", "Raccourci pour arrêter", 0);
+            w.generation += 1;
+            w.state = State::Recording { recorder, generation: w.generation };
+            w.attachments = Attachments::default();
+            w.notify_recording();
+            let (walkie, generation) = (walkie.clone(), w.generation);
+            thread::spawn(move || watch_selection(&walkie, generation));
         }
-        State::Recording { mut recorder } => {
+        State::Recording { mut recorder, .. } => {
             let window = output("xdotool", &["getactivewindow"]);
             run("kill", &["-INT", &recorder.id().to_string()]);
             let _ = recorder.wait();
             w.notify("⏳ Transcription…", "", 0);
+            let attachments = std::mem::take(&mut w.attachments);
             let (walkie, ctx, cfg) = (walkie.clone(), ctx.clone(), cfg.clone());
-            thread::spawn(move || hold(&walkie, &ctx, &cfg, window));
+            thread::spawn(move || hold(&walkie, &ctx, &cfg, window, attachments));
         }
         State::Transcribing => {}
         State::Holding { .. } => w.cancel(),
@@ -226,7 +298,44 @@ fn await_answer(hold: Duration, holding: impl Fn() -> bool) -> Answer {
     Answer::Timeout
 }
 
-fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>) {
+fn primary_selection() -> String {
+    output("xclip", &["-o", "-selection", "primary"]).unwrap_or_default()
+}
+
+fn watch_selection(walkie: &Arc<Mutex<Walkie>>, generation: u64) {
+    let mut last = primary_selection();
+    loop {
+        thread::sleep(Duration::from_millis(300));
+        let current = primary_selection();
+        let mut w = walkie.lock().unwrap();
+        if !matches!(w.state, State::Recording { generation: g, .. } if g == generation) {
+            return;
+        }
+        if !current.is_empty() && current != last {
+            w.attachments.add_selection(&current);
+            w.notify_recording();
+        }
+        last = current;
+    }
+}
+
+fn shot(walkie: &Arc<Mutex<Walkie>>, cfg: &Config) {
+    let mut w = walkie.lock().unwrap();
+    if !matches!(w.state, State::Recording { .. }) {
+        w.notify("📸 Capture possible seulement pendant une dictée", "", 3000);
+        return;
+    }
+    let millis = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_millis();
+    let path = cfg.shots_dir.join(format!("shot-{millis}.png"));
+    if capture::screen_under_pointer(&path).is_some() {
+        w.attachments.shots.push(path);
+        w.notify_recording();
+    } else {
+        w.notify("📸 Capture impossible", "", 3000);
+    }
+}
+
+fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window: Option<String>, attachments: Attachments) {
     let text = transcribe(ctx, &cfg.wav, &cfg.language);
     let generation = {
         let mut w = walkie.lock().unwrap();
@@ -235,6 +344,7 @@ fn hold(walkie: &Arc<Mutex<Walkie>>, ctx: &WhisperContext, cfg: &Config, window:
             w.notify("🤷 Rien entendu", "", 3000);
             return;
         }
+        let text = compose(&text, &attachments);
         if let Ok(mut xclip) = Command::new("xclip").args(["-selection", "clipboard"]).stdin(Stdio::piped()).spawn() {
             let _ = xclip.stdin.take().unwrap().write_all(text.as_bytes());
         }
@@ -274,7 +384,12 @@ fn load_model(cfg: &Config) -> WhisperContext {
 fn serve() {
     let cfg = Arc::new(config());
     let ctx = Arc::new(load_model(&cfg));
-    let walkie = Arc::new(Mutex::new(Walkie { state: State::Idle, generation: 0, notification_id: None }));
+    let walkie = Arc::new(Mutex::new(Walkie {
+        state: State::Idle,
+        generation: 0,
+        notification_id: None,
+        attachments: Attachments::default(),
+    }));
 
     let path = socket_path();
     let _ = std::fs::remove_file(&path);
@@ -284,10 +399,17 @@ fn serve() {
     for mut conn in listener.incoming().flatten() {
         let mut buf = [0u8; 16];
         let n = conn.read(&mut buf).unwrap_or(0);
-        if &buf[..n] == b"toggle" {
-            toggle(&walkie, &ctx, &cfg);
+        match &buf[..n] {
+            b"toggle" => toggle(&walkie, &ctx, &cfg),
+            b"shot" => shot(&walkie, &cfg),
+            _ => {}
         }
     }
+}
+
+fn send(command: &str) {
+    let mut stream = UnixStream::connect(socket_path()).expect("le service walkie-talkie ne tourne pas");
+    stream.write_all(command.as_bytes()).unwrap();
 }
 
 fn main() {
@@ -298,12 +420,10 @@ fn main() {
             let cfg = config();
             println!("{}", transcribe(&load_model(&cfg), Path::new(&wav), &cfg.language));
         }
-        Some("toggle") | None => {
-            let mut stream = UnixStream::connect(socket_path()).expect("le service walkie-talkie ne tourne pas");
-            stream.write_all(b"toggle").unwrap();
-        }
+        Some(command @ ("toggle" | "shot")) => send(command),
+        None => send("toggle"),
         Some(other) => {
-            eprintln!("usage : walkie-talkie [serve|toggle|transcribe <fichier.wav>] (reçu : {other})");
+            eprintln!("usage : walkie-talkie [serve|toggle|shot|transcribe <fichier.wav>] (reçu : {other})");
             std::process::exit(2);
         }
     }
